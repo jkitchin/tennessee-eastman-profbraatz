@@ -16,9 +16,15 @@ Python wrapper developed with Claude Code by John Kitchin.
 - **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
 - **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
 - **Real-time streaming interface** for dashboard integration
-- **Interactive GUI dashboard** with live plotting and controls
+- **Interactive web dashboard** with live plotting and controls
 - **Reproducible simulations** with seeded random number generation
 - **Exact Fortran results** via f2py wrapper (requires gfortran)
+
+## Example Output
+
+![Simulation Example](docs/images/simulation_example.png)
+
+*Simulation showing IDV(6) - A Feed Loss fault applied at t=1 hour. The A feed flow drops to zero, causing reactor pressure to rise as the controller compensates.*
 
 ## Quick Start
 
@@ -76,16 +82,25 @@ result = sim.simulate(
 )
 ```
 
-### Launch GUI Dashboard
+### Launch Web Dashboard
 
 ```bash
 # From command line
-tep-dashboard
+tep-web
+
+# With options
+tep-web --no-browser --port 8080
 
 # Or from Python
-from tep import run_dashboard
+from tep.dashboard_dash import run_dashboard
 run_dashboard()
 ```
+
+The web dashboard provides:
+- Real-time process visualization
+- Interactive disturbance controls
+- Manual valve manipulation
+- Data export to CSV
 
 ## Documentation
 
