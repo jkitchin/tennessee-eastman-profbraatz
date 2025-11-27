@@ -12,11 +12,5 @@ py.install_sources(
   subdir: 'tep'
 )
 
-# Install _fortran subpackage
-py.install_sources(
-  ['_fortran/__init__.py'],
-  subdir: 'tep/_fortran'
-)
-
-# Build Fortran extension if available - handled in fortran/meson.build
-# The extension is built there and installed to tep/_fortran/
+# Process _fortran subpackage
+subdir('_fortran')
