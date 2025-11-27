@@ -5,6 +5,8 @@
 
 A pure Python implementation of the Tennessee Eastman Process (TEP) simulator, faithfully translated from the original Fortran code by Downs & Vogel (1993).
 
+The translation was performed with Claude Code by John Kitchin.
+
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
