@@ -1,16 +1,20 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = [
+    "meson-python>=0.15.0",
+    "meson>=1.0.0",
+    "numpy>=1.22.0",
+]
+build-backend = "mesonpy"
 
 [project]
 name = "tep"
 version = "1.1.0"
-description = "Pure Python implementation of the Tennessee Eastman Process simulator"
+description = "Tennessee Eastman Process simulator with optional Fortran acceleration"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Python translation of Downs & Vogel (1993)"}
+    {name = "John Kitchin"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -22,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Fortran",
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
@@ -44,11 +49,10 @@ dev = [
 ]
 
 [project.scripts]
-tep-dashboard = "tep.dashboard:main"
 tep-web = "tep.dashboard_dash:main"
 
-[tool.setuptools.packages.find]
-include = ["tep*"]
+[tool.meson-python.args]
+setup = ['-Dfortran=auto']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

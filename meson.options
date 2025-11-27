@@ -1,0 +1,4 @@
+option('fortran', type: 'combo',
+       choices: ['auto', 'enabled', 'disabled'],
+       value: 'auto',
+       description: 'Build Fortran extension')

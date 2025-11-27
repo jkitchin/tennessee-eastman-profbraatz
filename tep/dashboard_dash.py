@@ -22,14 +22,20 @@ Usage:
 import numpy as np
 import webbrowser
 import threading
-from dash import Dash, html, dcc, callback, Output, Input, State, ctx
+import logging
+
+# Suppress Flask/Werkzeug logging early (before app is created)
+logging.getLogger('werkzeug').setLevel(logging.CRITICAL)
+logging.getLogger('flask.app').setLevel(logging.CRITICAL)
+
+from dash import Dash, html, dcc, Output, Input, State, ctx, dash_table
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from .simulator import TEPSimulator, ControlMode
 from .constants import (
     NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES, INITIAL_STATES,
-    SAFETY_LIMITS
+    SAFETY_LIMITS, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES
 )
 
 
@@ -278,6 +284,11 @@ def create_layout():
                         html.Span("Time: ", style={'fontWeight': 'bold'}),
                         html.Span(id='time-text', children="0.00 hr")
                     ]),
+                    html.Div([
+                        html.Span("Active Faults (Fortran): ", style={'fontWeight': 'bold'}),
+                        html.Span(id='active-faults-text', children="None",
+                                 style={'color': '#27ae60'})
+                    ], style={'marginTop': '5px'}),
                 ], style={'backgroundColor': '#fff', 'padding': '15px', 'borderRadius': '5px',
                          'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'marginBottom': '15px'}),
 
@@ -304,22 +315,67 @@ def create_layout():
                          'boxShadow': '0 2px 5px rgba(0,0,0,0.1)'})
             ], style={'width': '300px', 'flexShrink': '0', 'marginRight': '15px'}),
 
-            # Center - Plots
+            # Center - Tabs with Plots and All Variables
             html.Div([
-                dcc.Graph(id='main-plots', style={'height': '850px'})
+                dcc.Tabs(id='main-tabs', value='plots-tab', children=[
+                    dcc.Tab(label='Process Plots', value='plots-tab', children=[
+                        # Welcome message shown before simulation starts
+                        html.Div(id='welcome-message', children=[
+                            html.Div([
+                                html.H2("Welcome to the TEP Simulator",
+                                       style={'color': '#2c3e50', 'marginBottom': '20px'}),
+                                html.P("Press the Start button to begin the simulation.",
+                                      style={'fontSize': '18px', 'color': '#7f8c8d', 'marginBottom': '30px'}),
+                                html.Div([
+                                    html.H4("Quick Start Guide:", style={'color': '#34495e', 'marginBottom': '15px'}),
+                                    html.Ul([
+                                        html.Li("Adjust simulation speed with the slider"),
+                                        html.Li("Set data output interval (how often points are recorded)"),
+                                        html.Li("Enable disturbances on the right panel to test fault scenarios"),
+                                        html.Li("Switch to Manual mode to control valves directly"),
+                                        html.Li("Use the All Variables tab to see all 41 measurements"),
+                                    ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8'})
+                                ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
+                                         'maxWidth': '500px', 'margin': '0 auto'})
+                            ], style={'textAlign': 'center', 'padding': '100px 20px'})
+                        ], style={'display': 'block'}),
+                        # Graph hidden initially, shown when simulation runs
+                        dcc.Graph(id='main-plots', style={'height': '850px', 'display': 'none'})
+                    ]),
+                    dcc.Tab(label='All Variables', value='variables-tab', children=[
+                        html.Div([
+                            # Measurements plots
+                            html.H4("Process Measurements (XMEAS 1-41)",
+                                   style={'marginTop': '10px', 'marginBottom': '10px', 'color': '#2c3e50'}),
+                            dcc.Graph(id='measurements-grid', style={'height': '600px'}),
+
+                            # MVs plots
+                            html.H4("Manipulated Variables (XMV 1-12)",
+                                   style={'marginTop': '10px', 'marginBottom': '10px', 'color': '#2c3e50'}),
+                            dcc.Graph(id='mvs-grid', style={'height': '350px'}),
+                        ], style={'padding': '10px', 'maxHeight': '1000px', 'overflowY': 'auto'})
+                    ]),
+                ], style={'height': '100%'})
             ], style={'flexGrow': '1', 'backgroundColor': '#fff', 'borderRadius': '5px',
                      'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'padding': '10px'}),
 
             # Right panel - Disturbances
             html.Div([
                 html.H3("Disturbances", style={'marginTop': '0'}),
-                html.P("Check to enable process upsets:",
+                # Active disturbances display
+                html.Div([
+                    html.Span("Active: ", style={'fontWeight': 'bold', 'fontSize': '12px'}),
+                    html.Span(id='active-idv-display', children="None",
+                             style={'fontSize': '12px', 'color': '#27ae60'})
+                ], style={'marginBottom': '10px', 'padding': '8px',
+                         'backgroundColor': '#f8f9fa', 'borderRadius': '4px'}),
+                html.P("Select faults, then click Apply:",
                       style={'fontSize': '12px', 'color': '#7f8c8d', 'marginBottom': '10px'}),
                 html.Div([
                     html.Div([
                         dcc.Checklist(
                             id=f'idv-{i}',
-                            options=[{'label': f" {IDV_INFO[i][0]}", 'value': i}],
+                            options=[{'label': f" {IDV_INFO[i][0]}", 'value': i + 1}],
                             value=[],
                             style={'display': 'inline-block'}
                         ),
@@ -334,20 +390,29 @@ def create_layout():
                             }
                         )
                     ]) for i in range(NUM_DISTURBANCES)
-                ], style={'maxHeight': '650px', 'overflowY': 'auto'}),
-                html.Button('Clear All', id='clear-disturbances-btn', n_clicks=0,
-                           style={'marginTop': '10px', 'backgroundColor': '#95a5a6', 'color': 'white',
-                                 'border': 'none', 'padding': '8px 15px', 'cursor': 'pointer', 'width': '100%'})
+                ], style={'maxHeight': '550px', 'overflowY': 'auto'}),
+                html.Div([
+                    html.Button('Apply Disturbances', id='apply-disturbances-btn', n_clicks=0,
+                               style={'marginTop': '10px', 'backgroundColor': '#e74c3c', 'color': 'white',
+                                     'border': 'none', 'padding': '8px 15px', 'cursor': 'pointer', 'width': '100%',
+                                     'fontWeight': 'bold'}),
+                    html.Button('Clear All', id='clear-disturbances-btn', n_clicks=0,
+                               style={'marginTop': '5px', 'backgroundColor': '#95a5a6', 'color': 'white',
+                                     'border': 'none', 'padding': '8px 15px', 'cursor': 'pointer', 'width': '100%'})
+                ])
             ], style={'width': '280px', 'flexShrink': '0', 'marginLeft': '15px',
                      'backgroundColor': '#fff', 'padding': '15px', 'borderRadius': '5px',
                      'boxShadow': '0 2px 5px rgba(0,0,0,0.1)'})
         ], style={'display': 'flex', 'padding': '0 15px'}),
 
-        # Interval for updates
-        dcc.Interval(id='interval-component', interval=100, n_intervals=0, disabled=True),
+        # Interval for updates (200ms = 5 updates/sec for smooth but responsive UI)
+        dcc.Interval(id='interval-component', interval=200, n_intervals=0, disabled=True),
 
         # Store for simulation state
-        dcc.Store(id='sim-state', data={'running': False, 'speed': 50, 'output_interval': 180})
+        dcc.Store(id='sim-state', data={'running': False, 'speed': 50, 'output_interval': 180}),
+
+        # Dummy store for apply disturbances callback
+        dcc.Store(id='apply-disturbances-dummy', data={})
     ], style={'fontFamily': 'Arial, sans-serif', 'backgroundColor': '#ecf0f1',
               'minHeight': '100vh', 'paddingBottom': '20px'})
 
@@ -421,14 +486,11 @@ init_simulator()
 app.layout = create_layout()
 
 
-@callback(
+@app.callback(
     Output('interval-component', 'disabled'),
     Output('sim-state', 'data'),
     Output('status-text', 'children'),
     Output('status-text', 'style'),
-    Output('shutdown-alert', 'style', allow_duplicate=True),
-    Output('main-plots', 'figure', allow_duplicate=True),
-    Output('time-text', 'children', allow_duplicate=True),
     Input('start-btn', 'n_clicks'),
     Input('stop-btn', 'n_clicks'),
     Input('reset-btn', 'n_clicks'),
@@ -443,35 +505,87 @@ def control_simulation(start_clicks, stop_clicks, reset_clicks, state, speed, ou
 
     triggered = ctx.triggered_id
 
-    # Hidden style for shutdown alert
-    hidden_style = {'display': 'none'}
-    from dash import no_update
-
     if triggered == 'start-btn':
         sim_data['running'] = True
         sim_data['output_interval'] = output_interval
         state['running'] = True
         state['speed'] = speed
         state['output_interval'] = output_interval
-        return False, state, "Running", {'color': '#27ae60', 'fontWeight': 'bold'}, hidden_style, no_update, no_update
+        return False, state, "Running", {'color': '#27ae60', 'fontWeight': 'bold'}
 
     elif triggered == 'stop-btn':
         sim_data['running'] = False
         state['running'] = False
-        return True, state, "Stopped", {'color': '#e74c3c'}, hidden_style, no_update, no_update
+        return True, state, "Stopped", {'color': '#e74c3c'}
 
     elif triggered == 'reset-btn':
         init_simulator()
         state['running'] = False
-        # Create empty figure to clear plots
-        empty_fig = create_figure_with_data()
-        return True, state, "Ready", {'color': '#27ae60'}, hidden_style, empty_fig, "0.00 hr (0.0 min)"
+        return True, state, "Ready", {'color': '#27ae60'}
 
-    return True, state, "Ready", {'color': '#27ae60'}, hidden_style, no_update, no_update
+    return True, state, "Ready", {'color': '#27ae60'}
 
 
-@callback(
+@app.callback(
+    Output('main-plots', 'style'),
+    Output('welcome-message', 'style'),
+    Input('start-btn', 'n_clicks'),
+    Input('reset-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def toggle_welcome_message(start_clicks, reset_clicks):
+    """Show/hide welcome message based on simulation state."""
+    triggered = ctx.triggered_id
+
+    graph_visible = {'height': '850px', 'display': 'block'}
+    graph_hidden = {'height': '850px', 'display': 'none'}
+    welcome_visible = {'display': 'block'}
+    welcome_hidden = {'display': 'none'}
+
+    if triggered == 'start-btn':
+        # Hide welcome, show graph
+        return graph_visible, welcome_hidden
+    elif triggered == 'reset-btn':
+        # Show welcome, hide graph
+        return graph_hidden, welcome_visible
+
+    # Default: show welcome
+    return graph_hidden, welcome_visible
+
+
+@app.callback(
+    Output('apply-disturbances-dummy', 'data'),
+    Output('active-idv-display', 'children', allow_duplicate=True),
+    Output('active-idv-display', 'style', allow_duplicate=True),
+    Input('apply-disturbances-btn', 'n_clicks'),
+    *[State(f'idv-{i}', 'value') for i in range(NUM_DISTURBANCES)],
+    prevent_initial_call=True
+)
+def apply_disturbances(n_clicks, *idv_values):
+    """Apply selected disturbances to simulator when button is clicked."""
+    active_idvs = []
+    if simulator:
+        # First clear all, then set the checked ones
+        simulator.clear_disturbances()
+        for i in range(NUM_DISTURBANCES):
+            if idv_values[i] and (i + 1) in idv_values[i]:
+                simulator.set_disturbance(i + 1, 1)
+                active_idvs.append(i + 1)
+
+    if active_idvs:
+        display_text = f"IDV({', '.join(map(str, active_idvs))})"
+        display_style = {'fontSize': '12px', 'color': '#e74c3c', 'fontWeight': 'bold'}
+    else:
+        display_text = "None"
+        display_style = {'fontSize': '12px', 'color': '#27ae60'}
+
+    return {'applied': True}, display_text, display_style
+
+
+@app.callback(
     [Output(f'idv-{i}', 'value') for i in range(NUM_DISTURBANCES)],
+    Output('active-idv-display', 'children', allow_duplicate=True),
+    Output('active-idv-display', 'style', allow_duplicate=True),
     Input('clear-disturbances-btn', 'n_clicks'),
     prevent_initial_call=True
 )
@@ -479,25 +593,29 @@ def clear_disturbances(n_clicks):
     """Clear all disturbances."""
     if simulator:
         simulator.clear_disturbances()
-    return [[] for _ in range(NUM_DISTURBANCES)]
+    # Return empty checkboxes + reset display (must be flat tuple of 22 values)
+    empty_checkboxes = [[] for _ in range(NUM_DISTURBANCES)]
+    return (*empty_checkboxes, "None", {'fontSize': '12px', 'color': '#27ae60'})
 
 
-@callback(
+@app.callback(
     Output('main-plots', 'figure'),
     Output('time-text', 'children'),
     Output('shutdown-alert', 'style'),
     Output('shutdown-reason', 'children'),
+    Output('active-faults-text', 'children'),
+    Output('active-faults-text', 'style'),
     Input('interval-component', 'n_intervals'),
     State('sim-state', 'data'),
     State('control-mode', 'value'),
-    *[State(f'idv-{i}', 'value') for i in range(NUM_DISTURBANCES)],
-    *[State(f'mv-slider-{i}', 'value') for i in range(NUM_MANIPULATED_VARS)]
+    *[State(f'mv-slider-{i}', 'value') for i in range(NUM_MANIPULATED_VARS)],
+    prevent_initial_call=True
 )
-def update_simulation(n_intervals, state, control_mode, *args):
+def update_simulation(n_intervals, state, control_mode, *mv_values):
     """Run simulation step and update plots."""
     global simulator, sim_data
 
-    # Default hidden style for shutdown alert
+    # Default styles
     hidden_style = {'display': 'none'}
     shutdown_style = {
         'display': 'block',
@@ -510,21 +628,27 @@ def update_simulation(n_intervals, state, control_mode, *args):
         'boxShadow': '0 4px 6px rgba(0,0,0,0.3)'
     }
 
-    # Split args into disturbances and mv_values
-    idv_values = args[:NUM_DISTURBANCES]
-    mv_values = args[NUM_DISTURBANCES:]
+    # Helper to get active faults display
+    def get_faults_display():
+        if simulator:
+            active = simulator.get_active_disturbances()
+            if active:
+                return f"IDV({', '.join(map(str, active))})", {'color': '#e74c3c', 'fontWeight': 'bold'}
+        return "None", {'color': '#27ae60'}
 
     # Check if already shutdown
     if simulator and simulator.is_shutdown():
         reason = sim_data.get('shutdown_reason', 'Safety limit violation')
+        faults_text, faults_style = get_faults_display()
         return (create_figure_with_data(),
                 f"{simulator.time:.2f} hr ({simulator.time*60:.1f} min)",
-                shutdown_style, reason)
+                shutdown_style, reason, faults_text, faults_style)
 
     if not state.get('running', False) or simulator is None:
         # Return current state without updating
         time_str = f"{simulator.time:.2f} hr" if simulator else "0.00 hr"
-        return create_figure_with_data(), time_str, hidden_style, ""
+        faults_text, faults_style = get_faults_display()
+        return create_figure_with_data(), time_str, hidden_style, "", faults_text, faults_style
 
     # Update control mode
     if control_mode == 'closed_loop':
@@ -540,15 +664,14 @@ def update_simulation(n_intervals, state, control_mode, *args):
             if val is not None:
                 simulator.set_mv(i + 1, val)
 
-    # Update disturbances - each idv_values[i] is a list with [i] if checked or [] if not
-    for i in range(NUM_DISTURBANCES):
-        is_enabled = len(idv_values[i]) > 0 if idv_values[i] else False
-        simulator.set_disturbance(i + 1, 1 if is_enabled else 0)
+    # Disturbances are now only modified via Apply/Clear buttons, not here.
+    # This prevents any callback timing issues from affecting the simulation.
 
-    # Run simulation steps and record data at specified output interval
     speed = state.get('speed', 10)
     output_interval = sim_data.get('output_interval', 180)  # Default 180 sec (3 min)
     shutdown_occurred = False
+
+    # Run simulation steps and record data at specified output interval
     for _ in range(speed):
         if not simulator.step():
             sim_data['running'] = False
@@ -572,13 +695,9 @@ def update_simulation(n_intervals, state, control_mode, *args):
             for i in range(NUM_MANIPULATED_VARS):
                 sim_data['mvs'][i].append(mvs[i])
 
-            # Record active disturbances (IDVs)
-            # idv_values[i] is a list: [i] if checked, [] if unchecked
-            active_idvs = []
-            for i in range(NUM_DISTURBANCES):
-                if idv_values[i] is not None and len(idv_values[i]) > 0:
-                    active_idvs.append(i + 1)  # IDV numbers are 1-based
-            sim_data['idv'].append(active_idvs)
+            # Record active disturbances directly from Fortran IDV array
+            # This is the true source of truth for what the simulation is using
+            sim_data['idv'].append(simulator.get_active_disturbances())
 
     # Limit total data stored to prevent memory issues
     # Keep max 20,000 points - at speed=10, this is ~3 min of real time before decimation
@@ -597,11 +716,14 @@ def update_simulation(n_intervals, state, control_mode, *args):
 
     time_str = f"{simulator.time:.2f} hr ({simulator.time*60:.1f} min)"
 
+    faults_text, faults_style = get_faults_display()
+
     if shutdown_occurred:
         return (create_figure_with_data(), time_str,
-                shutdown_style, sim_data.get('shutdown_reason', 'Safety limit violation'))
+                shutdown_style, sim_data.get('shutdown_reason', 'Safety limit violation'),
+                faults_text, faults_style)
 
-    return create_figure_with_data(), time_str, hidden_style, ""
+    return create_figure_with_data(), time_str, hidden_style, "", faults_text, faults_style
 
 
 def create_figure_with_data():
@@ -613,7 +735,11 @@ def create_figure_with_data():
         horizontal_spacing=0.1
     )
 
-    colors = ['#3498db', '#e74c3c', '#2ecc71']
+    # Use distinct colors and line styles for better differentiation
+    # Colors: blue, orange, green, purple, brown, pink
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2']
+    # Line dashes: solid, dash, dot, dashdot
+    dashes = ['solid', 'dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
     max_points = sim_data.get('max_display_points', 2000)
 
     # Decimate time data for display
@@ -645,7 +771,9 @@ def create_figure_with_data():
                     y=y_data,
                     name=label,
                     mode='lines',
-                    line=dict(color=colors[color_idx], width=2),
+                    line=dict(color=colors[color_idx % len(colors)],
+                             width=2,
+                             dash=dashes[color_idx % len(dashes)]),
                     legendgroup=f'group{idx}',
                     showlegend=True,
                 ),
@@ -702,7 +830,109 @@ def create_figure_with_data():
     return fig
 
 
-@callback(
+@app.callback(
+    Output('measurements-grid', 'figure'),
+    Output('mvs-grid', 'figure'),
+    Input('interval-component', 'n_intervals'),
+    State('main-tabs', 'value'),
+    prevent_initial_call=True
+)
+def update_variables_grid(n_intervals, active_tab):
+    """Update the All Variables grid with time series plots."""
+    global simulator, sim_data
+    from dash import no_update
+
+    # Only update if the Variables tab is active to reduce browser load
+    if active_tab != 'variables-tab':
+        return no_update, no_update
+
+    max_points = sim_data.get('max_display_points', 2000)
+    time_data_full = sim_data['time']
+    time_data = decimate_data(time_data_full, max_points)
+
+    # Create measurements figure (7 cols x 6 rows = 42 subplots, using 41)
+    n_meas_rows = 6
+    n_meas_cols = 7
+    meas_titles = [f"XMEAS({i+1})" for i in range(NUM_MEASUREMENTS)]
+
+    meas_fig = make_subplots(
+        rows=n_meas_rows, cols=n_meas_cols,
+        subplot_titles=meas_titles,
+        vertical_spacing=0.06,
+        horizontal_spacing=0.03
+    )
+
+    for i in range(NUM_MEASUREMENTS):
+        row = i // n_meas_cols + 1
+        col = i % n_meas_cols + 1
+
+        y_data_full = sim_data['measurements'].get(i, [])
+        y_data = decimate_data(y_data_full, max_points)
+
+        meas_fig.add_trace(
+            go.Scatter(
+                x=time_data,
+                y=y_data,
+                mode='lines',
+                line=dict(color='#3498db', width=1),
+                showlegend=False,
+            ),
+            row=row, col=col
+        )
+
+    meas_fig.update_layout(
+        height=600,
+        margin=dict(l=30, r=10, t=30, b=30),
+        template='plotly_white',
+        showlegend=False,
+    )
+    # Update all axes to be minimal
+    meas_fig.update_xaxes(showticklabels=False, showgrid=True, gridcolor='#f0f0f0')
+    meas_fig.update_yaxes(showticklabels=True, tickfont=dict(size=8), showgrid=True, gridcolor='#f0f0f0')
+
+    # Create MVs figure (4 cols x 3 rows = 12 subplots)
+    n_mv_rows = 3
+    n_mv_cols = 4
+    mv_titles = [f"XMV({i+1})" for i in range(NUM_MANIPULATED_VARS)]
+
+    mvs_fig = make_subplots(
+        rows=n_mv_rows, cols=n_mv_cols,
+        subplot_titles=mv_titles,
+        vertical_spacing=0.12,
+        horizontal_spacing=0.05
+    )
+
+    for i in range(NUM_MANIPULATED_VARS):
+        row = i // n_mv_cols + 1
+        col = i % n_mv_cols + 1
+
+        y_data_full = sim_data['mvs'].get(i, [])
+        y_data = decimate_data(y_data_full, max_points)
+
+        mvs_fig.add_trace(
+            go.Scatter(
+                x=time_data,
+                y=y_data,
+                mode='lines',
+                line=dict(color='#27ae60', width=1),
+                showlegend=False,
+            ),
+            row=row, col=col
+        )
+
+    mvs_fig.update_layout(
+        height=350,
+        margin=dict(l=30, r=10, t=30, b=30),
+        template='plotly_white',
+        showlegend=False,
+    )
+    mvs_fig.update_xaxes(showticklabels=False, showgrid=True, gridcolor='#f0f0f0')
+    mvs_fig.update_yaxes(showticklabels=True, tickfont=dict(size=8), showgrid=True, gridcolor='#f0f0f0')
+
+    return meas_fig, mvs_fig
+
+
+@app.callback(
     Output('download-data', 'data'),
     Input('download-btn', 'n_clicks'),
     prevent_initial_call=True
@@ -794,7 +1024,15 @@ def run_dashboard(host='127.0.0.1', port=8050, debug=False, open_browser=True):
 
 def main():
     """Entry point for the dashboard."""
-    run_dashboard()
+    import argparse
+    parser = argparse.ArgumentParser(description='Tennessee Eastman Process Web Dashboard')
+    parser.add_argument('--no-browser', action='store_true', help='Do not open browser automatically')
+    parser.add_argument('--port', type=int, default=8050, help='Port number (default: 8050)')
+    parser.add_argument('--host', default='127.0.0.1', help='Host address (default: 127.0.0.1)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    args = parser.parse_args()
+
+    run_dashboard(host=args.host, port=args.port, debug=args.debug, open_browser=not args.no_browser)
 
 
 if __name__ == "__main__":
