@@ -1,40 +1,183 @@
-# Table of Contents
+# Tennessee Eastman Process Simulator
 
-1. [Author](#author)
-2. [Contents](#contents)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-	3. [`teprob.f`](#teprobf)
-	4. [`temain_mod.f`](#temainmodf)
+A pure Python implementation of the Tennessee Eastman Process (TEP) simulator, faithfully translated from the original Fortran code by Downs & Vogel (1993).
 
-		5. [License](#license)
-		6. [Instructions for running the program](#instructions-for-running-the-program)
+## Features
 
-	5. [`teprob.f`](#teprobf)
+- **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
+- **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
+- **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
+- **Real-time streaming interface** for dashboard integration
+- **Interactive GUI dashboard** with live plotting and controls
+- **Reproducible simulations** with seeded random number generation
+- **Modular design** for easy extension and research
 
-		6. [Subroutines](#subroutines)
-		6. [Manipulated Variables](#manipulated-variables)
-		6. [Continuous Process Measurements](#continuous-process-measurements)
-		7. [Sampled Process Measurements](#sampled-process-measurements)
-		8. [Process Disturbances](#process-disturbances)
+## Quick Start
 
-# Author
+### Installation
 
-> Copyright (c) 1998-2002 The Board of Trustees of the University of Illinois All rights reserved.
-> 
-> Developed by: Large Scale Systems Research Laboratory
->
-> Professor Richard Braatz, Director
-> Department of Chemical Engineering
-> University of Illinois
-> 
-> http://brahms.scs.uiuc.edu
+```bash
+# Basic installation
+pip install -e .
 
-# Contents
+# With GUI dashboard support
+pip install -e ".[gui]"
 
-This directory contains the Fortran 77 codes for the open-loop and the closed-loop simulations for the Tennessee Eastman process (TEP) as well as the training and testing data files used for evaluating the data-driven methods (PCA, PLS, FDA, and CVA).  
+# For development (includes pytest)
+pip install -e ".[dev]"
+```
 
-The descriptions of each file is shown below:
+### Basic Usage
 
+```python
+from tep import TEPSimulator
+
+# Create and initialize simulator
+sim = TEPSimulator()
+sim.initialize()
+
+# Run a 1-hour simulation
+result = sim.simulate(duration_hours=1.0)
+
+# Access results
+print(f"Simulation time: {result.time[-1]:.2f} hours")
+print(f"Final reactor temperature: {result.measurements[-1, 8]:.1f} °C")
+print(f"Final reactor pressure: {result.measurements[-1, 6]:.1f} kPa")
+```
+
+### With Disturbances
+
+```python
+from tep import TEPSimulator
+
+sim = TEPSimulator()
+sim.initialize()
+
+# Apply disturbance IDV(1) at t=0.5 hours
+result = sim.simulate(
+    duration_hours=2.0,
+    disturbances={1: (0.5, 1)}  # {disturbance_id: (time_hours, value)}
+)
+```
+
+### Launch GUI Dashboard
+
+```bash
+# From command line
+tep-dashboard
+
+# Or from Python
+from tep import run_dashboard
+run_dashboard()
+```
+
+## Documentation
+
+- [API Reference](docs/api.md) - Detailed API documentation
+- [Dashboard Guide](docs/dashboard.md) - Interactive GUI documentation
+- [Examples](examples/) - Usage examples and tutorials
+
+## Architecture
+
+```
+tep/
+├── __init__.py          # Package exports
+├── constants.py         # Physical properties, initial states
+├── thermodynamics.py    # Enthalpy, temperature, density calculations
+├── disturbances.py      # IDV flags, random number generation
+├── process.py           # Core TEP model (TEFUNC equivalent)
+├── integrators.py       # Euler and RK4 integration
+├── controllers.py       # PI controllers, decentralized control
+├── simulator.py         # High-level simulation interface
+└── dashboard.py         # Interactive GUI dashboard
+```
+
+## Process Overview
+
+The Tennessee Eastman Process is a realistic simulation of an industrial chemical process with:
+
+- **Reactor**: Exothermic reactions A→G, A→H, A+D→F, 3D→2F
+- **Separator**: Product separation with cooling water
+- **Stripper**: Steam-heated purification column
+- **Compressor**: Recycle gas compression
+
+### State Variables (50 total)
+
+| Range | Description |
+|-------|-------------|
+| 1-3 | Reactor component moles (A, B, C) |
+| 4-9 | Reactor component moles (D, E, F, G, H) + Separator liquid |
+| 10-12 | Separator vapor moles |
+| 13-17 | Stripper liquid moles |
+| 18-30 | Various pressures, levels, temperatures |
+| 31-36 | Compressor states |
+| 37-50 | Analyzer delay states |
+
+### Measurements (41 total)
+
+| Variable | Description | Units |
+|----------|-------------|-------|
+| XMEAS(1-6) | Feed and recycle flows | kscmh, kg/hr |
+| XMEAS(7-9) | Reactor pressure, level, temperature | kPa, %, °C |
+| XMEAS(10-14) | Purge and separator | various |
+| XMEAS(15-19) | Stripper measurements | various |
+| XMEAS(20-22) | Utilities | kW, °C |
+| XMEAS(23-28) | Reactor feed composition | mol% |
+| XMEAS(29-36) | Purge gas composition | mol% |
+| XMEAS(37-41) | Product composition | mol% |
+
+### Manipulated Variables (12)
+
+| Variable | Description |
+|----------|-------------|
+| XMV(1) | D Feed Flow |
+| XMV(2) | E Feed Flow |
+| XMV(3) | A Feed Flow |
+| XMV(4) | A and C Feed Flow |
+| XMV(5) | Compressor Recycle Valve |
+| XMV(6) | Purge Valve |
+| XMV(7) | Separator Liquid Flow |
+| XMV(8) | Stripper Product Flow |
+| XMV(9) | Stripper Steam Valve |
+| XMV(10) | Reactor Cooling Water |
+| XMV(11) | Condenser Cooling Water |
+| XMV(12) | Agitator Speed |
+
+### Disturbances (20)
+
+| IDV | Type | Description |
+|-----|------|-------------|
+| 1-7 | Step | Feed composition, temperature changes |
+| 8-12 | Random | Feed and cooling water variations |
+| 13 | Drift | Reaction kinetics slow change |
+| 14-15 | Sticking | Cooling water valve issues |
+| 16-20 | Unknown | Reserved for testing |
+
+## References
+
+**Original Fortran Code:**
+- J.J. Downs and E.F. Vogel, "A plant-wide industrial process control problem," *Computers and Chemical Engineering*, 17:245-255 (1993). [DOI](https://doi.org/10.1016/0098-1354(93)80018-I)
+
+**Modified Closed-Loop Control:**
+- E.L. Russell, L.H. Chiang, and R.D. Braatz, *Data-driven Techniques for Fault Detection and Diagnosis in Chemical Processes*, Springer-Verlag, London, 2000.
+- L.H. Chiang, E.L. Russell, and R.D. Braatz, *Fault Detection and Diagnosis in Industrial Systems*, Springer-Verlag, London, 2001.
+
+## License
+
+This project is licensed under the MIT License - see the original copyright notices below.
+
+---
+
+# Original Fortran Documentation
+
+The sections below document the original Fortran implementation.
+
+## Contents
+
+This directory contains the Fortran 77 codes for the open-loop and the closed-loop simulations for the Tennessee Eastman process (TEP) as well as the training and testing data files used for evaluating the data-driven methods (PCA, PLS, FDA, and CVA).
 
 File name | Description
 --------- | -----------
@@ -49,7 +192,7 @@ File name | Description
 `d02_te.dat`| testing file for Fault 2
 `d21.dat`|training file for Fault 21
 `d21_te.dat`| testing file for Fault 21
-	
+
 Each training data file contains 480 rows and 52 columns and each testing data file contains 960 rows and 52 columns.
 An observation vector at a particular time instant is given by
 ```fortran
@@ -68,7 +211,7 @@ Main program for demonstrating application of the **Tennessee Eastman Process Co
 > Process and Control Systems Engineering
 >
 > Tennessee Eastman Company
-> 
+>
 > P.O. Box 511
 >
 > Kingsport, TN  37662
@@ -106,9 +249,9 @@ Original codes of the **Tennessee Eastman Process Control Test Problem** written
 > Process and Control Systems Engineering
 >
 > Tennessee Eastman Company
-> 
+>
 > P.O. Box 511
-> 
+>
 > Kingsport, Tennessee 37662
 
 ### License
@@ -135,7 +278,7 @@ Users should cite the *modified code* using the following references:
 - [L.H. Chiang, E.L. Russell, and R.D. Braatz. *Fault diagnosis in chemical processes using Fisher discriminant analysis, discriminant partial least squares, and principal component analysis*, Chemometrics and Intelligent Laboratory Systems, 50:243-252, 2000](https://doi.org/10.1016/S0169-7439(99)00061-1).
 - [E.L. Russell, L.H. Chiang, and R.D. Braatz. *Fault detection in industrial processes using canonical variate analysis and dynamic principal component analysis*, Chemometrics and Intelligent Laboratory Systems, 51:81-93, 2000](https://doi.org/10.1016/S0169-7439(00)00058-7).
 
-### Instructions for running the program
+### Instructions for running the Fortran program
 
 1. Go to line `220`, change `NPTS` to the number of data points to simulate. For each minute of operation, 60 points are generated.
 2. Go to line `226`, change `SSPTS` to the number of data points to simulate in steady state operation before implementing the disturbance.
@@ -143,11 +286,11 @@ Users should cite the *modified code* using the following references:
 4. The program will generate 15 output files and all data are recorded every 180 seconds, see Table 1 for details.
 
 	The default path is the home directory.	To change the file name and path, modify lines `346-360` accordingly.
-    
+
 	To overwrite the files that already existed, change `STATUS='new'` to `STATUS='old'` from lines `346-360`.
 
 	**Table 1:** Content of the output files
-	
+
     \#| File Name | Content
     --| --------- | -------
      1| `TE_data_inc.dat` | Time (in seconds)
@@ -183,13 +326,13 @@ Revised 4-4-91 to correct error in documentation of manipulated variables
 **Tennessee Eastman Process Control Test Problem**
 
 > James J. Downs and Ernest F. Vogel
-> 
+>
 > Process and Control Systems Engineering
-> 
+>
 > Tennessee Eastman Company
-> 
+>
 > P.O. Box 511
-> 
+>
 > Kingsport, TN  37662
 
 **Reference**
@@ -200,7 +343,7 @@ Revised 4-4-91 to correct error in documentation of manipulated variables
 
 - `TEFUNC` - Function evaluator to be called by integrator
 - `TEINIT` - Initialization
-- `TESUBi` - Utility subroutines ($i = 1, 2, ..., 8$)
+- `TESUBi` - Utility subroutines (i = 1, 2, ..., 8)
 
 The process simulation has 50 states (`NN=50`).
 
@@ -266,7 +409,7 @@ C-----------------------------------------------
 2. There are 8 utility subroutines (`TESUBi`) rather than 5.
 3. Process disturbances 14 through 20 do *NOT* need to be used in conjunction with another disturbance as stated in the paper. All disturbances can be used alone or in any combination.
 
-### Manipulated Variables
+### Manipulated Variables (Fortran)
 
 Variable | Description
 -------- | -----------
@@ -283,7 +426,7 @@ Variable | Description
 `XMV(11)` | Condenser Cooling Water Flow
 `XMV(12)` | Agitator Speed
 
-### Continuous Process Measurements
+### Continuous Process Measurements (Fortran)
 
 Variable | Description | unit
 -------- | ----------- | ----
@@ -310,7 +453,7 @@ Variable | Description | unit
 `XMEAS(21)` | Reactor Cooling Water Outlet Temp   | Deg C
 `XMEAS(22)` | Separator Cooling Water Outlet Temp | Deg C
 
-### Sampled Process Measurements
+### Sampled Process Measurements (Fortran)
 
 - Reactor Feed Analysis (Stream 6)
   > - Sampling Frequency = 0.1 hr
@@ -356,7 +499,7 @@ Variable | Description | unit
 	`XMEAS(40)` | Component G
 	`XMEAS(41)` | Component H
 
-### Process Disturbances
+### Process Disturbances (Fortran)
 
 Variable | Description
 -------- | -----------
