@@ -34,18 +34,7 @@ jobs:
 
     - name: Build and install package
       run: |
-        pip install -v .[dev] -Csetup-args=-Dfortran=enabled
-
-    - name: Debug - Check installed files
-      run: |
-        cd /tmp
-        echo "=== Site packages tep directory ==="
-        python -c "import tep; import os; print(os.path.dirname(tep.__file__))"
-        ls -la $(python -c "import tep; import os; print(os.path.dirname(tep.__file__))")
-        echo "=== _fortran directory ==="
-        ls -la $(python -c "import tep; import os; print(os.path.dirname(tep.__file__))")/_fortran/ || echo "No _fortran directory"
-        echo "=== Try importing teprob ==="
-        python -c "from tep._fortran import teprob; print('SUCCESS')" || echo "FAILED to import teprob"
+        pip install .[dev] -Csetup-args=-Dfortran=enabled
 
     - name: Run tests
       run: |
