@@ -1,11 +1,14 @@
 # Tennessee Eastman Process Simulator
 
+[![Tests](https://github.com/jkitchin/tennessee-eastman-profbraatz/actions/workflows/tests.yml/badge.svg)](https://github.com/jkitchin/tennessee-eastman-profbraatz/actions/workflows/tests.yml)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A pure Python implementation of the Tennessee Eastman Process (TEP) simulator, faithfully translated from the original Fortran code by Downs & Vogel (1993).
+A Python interface to the Tennessee Eastman Process (TEP) simulator using the original Fortran code via f2py for exact reproduction of simulation results.
 
-The translation was performed with Claude Code by John Kitchin.
+Based on the original Fortran code by J.J. Downs and E.F. Vogel (1993), with modifications by E.L. Russell, L.H. Chiang, and R.D. Braatz.
+
+Python wrapper developed with Claude Code by John Kitchin.
 
 ## Features
 
@@ -15,14 +18,20 @@ The translation was performed with Claude Code by John Kitchin.
 - **Real-time streaming interface** for dashboard integration
 - **Interactive GUI dashboard** with live plotting and controls
 - **Reproducible simulations** with seeded random number generation
-- **Modular design** for easy extension and research
+- **Exact Fortran results** via f2py wrapper (requires gfortran)
 
 ## Quick Start
+
+### Requirements
+
+- Python 3.8+
+- Fortran compiler (gfortran) - required for building the f2py extension
+- NumPy
 
 ### Installation
 
 ```bash
-# Basic installation
+# Basic installation (requires gfortran)
 pip install -e .
 
 # With GUI dashboard support
@@ -31,6 +40,8 @@ pip install -e ".[gui]"
 # For development (includes pytest)
 pip install -e ".[dev]"
 ```
+
+**Note:** Installation requires a Fortran compiler. On macOS: `brew install gcc`. On Linux: `apt install gfortran`.
 
 ### Basic Usage
 
@@ -87,15 +98,17 @@ run_dashboard()
 ```
 tep/
 ├── __init__.py          # Package exports
-├── constants.py         # Physical properties, initial states
-├── thermodynamics.py    # Enthalpy, temperature, density calculations
-├── disturbances.py      # IDV flags, random number generation
-├── process.py           # Core TEP model (TEFUNC equivalent)
-├── integrators.py       # Euler and RK4 integration
+├── constants.py         # Physical constants, initial states, variable names
 ├── controllers.py       # PI controllers, decentralized control
-├── simulator.py         # High-level simulation interface
-└── dashboard.py         # Interactive GUI dashboard
+├── fortran_backend.py   # f2py wrapper for Fortran TEINIT/TEFUNC
+├── simulator.py         # High-level TEPSimulator interface
+├── dashboard.py         # Interactive tkinter GUI dashboard
+├── dashboard_dash.py    # Web-based Dash dashboard
+└── _fortran/            # Compiled Fortran extension (built during install)
+    └── teprob.cpython-*.so
 ```
+
+The simulator uses the original Fortran code (`teprob.f`) via f2py, ensuring exact numerical parity with the published TEP benchmark.
 
 ## Process Overview
 
