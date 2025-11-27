@@ -34,7 +34,7 @@ jobs:
 
     - name: Build and install package
       run: |
-        pip install .[dev]
+        pip install -v .[dev] -Csetup-args=-Dfortran=enabled
 
     - name: Run tests
       run: |
