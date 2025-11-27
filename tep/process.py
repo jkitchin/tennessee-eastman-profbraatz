@@ -667,6 +667,10 @@ class TEProcess:
             xmeas[22:41] = xcmp[22:41]
             self.state.tgas = 0.1
             self.state.tprod = 0.25
+        else:
+            # Retain previous sampled measurements between analyzer updates
+            # (like Fortran's COMMON block persistence)
+            xmeas[22:41] = self.state.xmeas[22:41]
 
         # Gas analyzer (0.1 hr sampling)
         if time >= self.state.tgas:

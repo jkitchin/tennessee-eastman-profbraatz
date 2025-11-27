@@ -73,6 +73,41 @@ class PIController:
 
         return new_output
 
+    def calculate_change(
+        self,
+        measurement: float,
+        dt: float
+    ) -> float:
+        """
+        Calculate controller output change (dxmv) for cascade control.
+
+        This method returns just the change in output (velocity form)
+        without applying limits, for use in cascade controllers where
+        the output adjusts a setpoint rather than a valve position.
+
+        Args:
+            measurement: Current process measurement
+            dt: Time step since last calculation (hours)
+
+        Returns:
+            Change in output (dxmv)
+        """
+        # Calculate error (normalized)
+        error = (self.setpoint - measurement) * self.scale
+
+        # P-only or PI control
+        if self.taui > 0:
+            # PI controller (velocity form)
+            dxmv = self.gain * ((error - self.err_old) + error * dt / self.taui)
+        else:
+            # P-only controller
+            dxmv = self.gain * (error - self.err_old)
+
+        # Store error for next iteration
+        self.err_old = error
+
+        return dxmv
+
     def reset(self):
         """Reset controller state."""
         self.err_old = 0.0
@@ -322,43 +357,43 @@ class DecentralizedController:
             # Controller 11: Stripper Underflow
             xmv_new[10] = self.ctrl11.calculate(xmeas[16], xmv_new[10], dt3)
 
-            # Controller 16: Stripper Temp -> Steam setpoint
-            dsp = self.ctrl16.calculate(xmeas[17], 0, dt3) - 0
-            self.setpoints[8] += dsp * 460.0 / 100.0
+            # Controller 16: Stripper Temp -> Steam setpoint (cascade)
+            dxmv = self.ctrl16.calculate_change(xmeas[17], dt3)
+            self.setpoints[8] += dxmv * 460.0 / 100.0
 
-            # Controller 17: Reactor Level -> A+C Feed setpoint
-            dsp = self.ctrl17.calculate(xmeas[7], 0, dt3) - 0
-            self.setpoints[3] += dsp * 15.25 / 100.0
+            # Controller 17: Reactor Level -> A+C Feed setpoint (cascade)
+            dxmv = self.ctrl17.calculate_change(xmeas[7], dt3)
+            self.setpoints[3] += dxmv * 15.25 / 100.0
 
-            # Controller 18: Reactor Temp -> Reactor CW setpoint
-            dsp = self.ctrl18.calculate(xmeas[8], 0, dt3) - 0
-            self.setpoints[9] += dsp * 150.0 / 100.0
+            # Controller 18: Reactor Temp -> Reactor CW setpoint (cascade)
+            dxmv = self.ctrl18.calculate_change(xmeas[8], dt3)
+            self.setpoints[9] += dxmv * 150.0 / 100.0
             self.ctrl10.setpoint = self.setpoints[9]
 
         # Medium loops (every 360 seconds = 6 minutes)
         if time_step % 360 == 0:
-            # Controller 13: Reactor Feed A -> A Feed setpoint
-            dsp = self.ctrl13.calculate(xmeas[22], 0, dt360) - 0
-            self.setpoints[2] += dsp * 1.017 / 100.0
+            # Controller 13: Reactor Feed A -> A Feed setpoint (cascade)
+            dxmv = self.ctrl13.calculate_change(xmeas[22], dt360)
+            self.setpoints[2] += dxmv * 1.017 / 100.0
 
-            # Controller 14: Reactor Feed D -> D Feed setpoint
-            dsp = self.ctrl14.calculate(xmeas[25], 0, dt360) - 0
-            self.setpoints[0] += dsp * 5811.0 / 100.0
+            # Controller 14: Reactor Feed D -> D Feed setpoint (cascade)
+            dxmv = self.ctrl14.calculate_change(xmeas[25], dt360)
+            self.setpoints[0] += dxmv * 5811.0 / 100.0
 
-            # Controller 15: Reactor Feed E -> E Feed setpoint
-            dsp = self.ctrl15.calculate(xmeas[26], 0, dt360) - 0
-            self.setpoints[1] += dsp * 8354.0 / 100.0
+            # Controller 15: Reactor Feed E -> E Feed setpoint (cascade)
+            dxmv = self.ctrl15.calculate_change(xmeas[26], dt360)
+            self.setpoints[1] += dxmv * 8354.0 / 100.0
 
-            # Controller 19: Purge B -> Purge Rate setpoint
-            dsp = self.ctrl19.calculate(xmeas[29], 0, dt360) - 0
-            self.setpoints[5] += dsp * 1.0 / 100.0
+            # Controller 19: Purge B -> Purge Rate setpoint (cascade)
+            dxmv = self.ctrl19.calculate_change(xmeas[29], dt360)
+            self.setpoints[5] += dxmv * 1.0 / 100.0
             self.ctrl6.setpoint = self.setpoints[5]
 
         # Slow loops (every 900 seconds = 15 minutes)
         if time_step % 900 == 0:
-            # Controller 20: Product E -> Stripper Temp setpoint
-            dsp = self.ctrl20.calculate(xmeas[37], 0, dt900) - 0
-            self.setpoints[15] += dsp * 130.0 / 100.0
+            # Controller 20: Product E -> Stripper Temp setpoint (cascade)
+            dxmv = self.ctrl20.calculate_change(xmeas[37], dt900)
+            self.setpoints[15] += dxmv * 130.0 / 100.0
             self.ctrl16.setpoint = self.setpoints[15]
 
         # Apply constraints
