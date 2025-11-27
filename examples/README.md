@@ -93,12 +93,16 @@ python examples/rieth2017_dataset.py --full
 python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,4,6
 ```
 
-**Output files:**
-- `fault_free_training.npy` - Normal operation training data
-- `fault_free_testing.npy` - Normal operation testing data
-- `faulty_training.npy` - Faulty training data
-- `faulty_testing.npy` - Faulty testing data
+**Output files (6 files with validation):**
+- `fault_free_training.npy` - Normal operation training data (25h)
+- `fault_free_validation.npy` - Normal operation validation data (48h)
+- `fault_free_testing.npy` - Normal operation testing data (48h)
+- `faulty_training.npy` - Faulty training data (25h, fault from t=0)
+- `faulty_validation.npy` - Faulty validation data (48h, fault at t=1h)
+- `faulty_testing.npy` - Faulty testing data (48h, fault at t=1h)
 - `metadata.json` - Dataset metadata
+
+Use `--no-validation` to generate only train/test splits (4 files).
 
 **Compare with Harvard Dataverse original:**
 ```bash

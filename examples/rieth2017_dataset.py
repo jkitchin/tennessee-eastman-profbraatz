@@ -52,9 +52,10 @@ except ImportError:
 RIETH_PARAMS = {
     "n_simulations": 500,           # Simulations per fault type
     "train_duration_hours": 25.0,   # Training simulation duration
+    "val_duration_hours": 48.0,     # Validation simulation duration
     "test_duration_hours": 48.0,    # Testing simulation duration
     "sampling_interval_min": 3,     # 3-minute sampling interval
-    "fault_onset_hours": 1.0,       # Fault introduced at 1 hour (test only)
+    "fault_onset_hours": 1.0,       # Fault introduced at 1 hour (val/test only)
     "n_faults": 20,                 # Number of fault types
 }
 
@@ -498,13 +499,24 @@ class Rieth2017DatasetGenerator:
         self.n_simulations = n_simulations
         self.seed_offset = seed_offset
 
-        # Separate seed ranges for training and testing (non-overlapping)
+        # Separate seed ranges for training, validation, and testing (non-overlapping)
         self.train_seed_base = seed_offset
-        self.test_seed_base = seed_offset + 1000000
+        self.val_seed_base = seed_offset + 1000000
+        self.test_seed_base = seed_offset + 2000000
 
-    def _get_seed(self, simulation_run: int, is_training: bool, fault_number: int) -> int:
+    def _get_seed(
+        self,
+        simulation_run: int,
+        split: Literal["train", "val", "test"],
+        fault_number: int,
+    ) -> int:
         """Generate unique seed for a simulation run."""
-        base = self.train_seed_base if is_training else self.test_seed_base
+        if split == "train":
+            base = self.train_seed_base
+        elif split == "val":
+            base = self.val_seed_base
+        else:
+            base = self.test_seed_base
         # Unique seed: base + (fault * 1000) + simulation_run
         return base + (fault_number * 1000) + simulation_run
 
@@ -593,7 +605,7 @@ class Rieth2017DatasetGenerator:
         all_data = []
 
         for sim_run in range(1, n_sims + 1):
-            seed = self._get_seed(sim_run, is_training=True, fault_number=0)
+            seed = self._get_seed(sim_run, split="train", fault_number=0)
 
             if sim_run % 50 == 0 or sim_run == 1:
                 print(f"  Simulation {sim_run}/{n_sims}...")
@@ -651,7 +663,7 @@ class Rieth2017DatasetGenerator:
         all_data = []
 
         for sim_run in range(1, n_sims + 1):
-            seed = self._get_seed(sim_run, is_training=False, fault_number=0)
+            seed = self._get_seed(sim_run, split="test", fault_number=0)
 
             if sim_run % 50 == 0 or sim_run == 1:
                 print(f"  Simulation {sim_run}/{n_sims}...")
@@ -676,6 +688,63 @@ class Rieth2017DatasetGenerator:
 
         if save:
             self._save_data(data_array, "fault_free_testing.npy")
+
+        return data_array
+
+    def generate_fault_free_validation(
+        self,
+        n_simulations: Optional[int] = None,
+        save: bool = True,
+    ) -> np.ndarray:
+        """
+        Generate fault-free validation data.
+
+        Parameters
+        ----------
+        n_simulations : int, optional
+            Number of simulations (default: 500)
+        save : bool
+            Whether to save to file
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_simulations * n_samples, 55)
+        """
+        n_sims = n_simulations or self.n_simulations
+        duration = RIETH_PARAMS["val_duration_hours"]
+
+        print(f"Generating fault-free validation data ({n_sims} simulations)...")
+        print(f"  Duration: {duration} hours")
+
+        all_data = []
+
+        for sim_run in range(1, n_sims + 1):
+            seed = self._get_seed(sim_run, split="val", fault_number=0)
+
+            if sim_run % 50 == 0 or sim_run == 1:
+                print(f"  Simulation {sim_run}/{n_sims}...")
+
+            result = self._run_simulation(seed, duration, fault_number=0)
+
+            if result is None:
+                continue
+
+            n_samples = result["data"].shape[0]
+
+            for sample_idx in range(n_samples):
+                row = np.zeros(55)
+                row[0] = 0
+                row[1] = sim_run
+                row[2] = sample_idx + 1
+                row[3:] = result["data"][sample_idx]
+                all_data.append(row)
+
+        data_array = np.array(all_data)
+        print(f"  Generated {len(data_array)} rows")
+
+        if save:
+            self._save_data(data_array, "fault_free_validation.npy")
 
         return data_array
 
@@ -721,7 +790,7 @@ class Rieth2017DatasetGenerator:
             shutdown_count = 0
 
             for sim_run in range(1, n_sims + 1):
-                seed = self._get_seed(sim_run, is_training=True, fault_number=fault_num)
+                seed = self._get_seed(sim_run, split="train", fault_number=fault_num)
 
                 if sim_run % 100 == 0 or sim_run == 1:
                     print(f"  Simulation {sim_run}/{n_sims}...")
@@ -802,7 +871,7 @@ class Rieth2017DatasetGenerator:
             shutdown_count = 0
 
             for sim_run in range(1, n_sims + 1):
-                seed = self._get_seed(sim_run, is_training=False, fault_number=fault_num)
+                seed = self._get_seed(sim_run, split="test", fault_number=fault_num)
 
                 if sim_run % 100 == 0 or sim_run == 1:
                     print(f"  Simulation {sim_run}/{n_sims}...")
@@ -838,6 +907,86 @@ class Rieth2017DatasetGenerator:
 
         return data_array
 
+    def generate_faulty_validation(
+        self,
+        fault_numbers: Optional[List[int]] = None,
+        n_simulations: Optional[int] = None,
+        save: bool = True,
+    ) -> np.ndarray:
+        """
+        Generate faulty validation data.
+
+        In the validation set, faults are introduced at 1 hour (same as testing).
+
+        Parameters
+        ----------
+        fault_numbers : list of int, optional
+            Fault numbers to generate (default: 1-20)
+        n_simulations : int, optional
+            Simulations per fault (default: 500)
+        save : bool
+            Whether to save to file
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_faults * n_simulations * n_samples, 55)
+        """
+        fault_nums = fault_numbers or list(range(1, RIETH_PARAMS["n_faults"] + 1))
+        n_sims = n_simulations or self.n_simulations
+        duration = RIETH_PARAMS["val_duration_hours"]
+        fault_onset = RIETH_PARAMS["fault_onset_hours"]
+
+        print(f"Generating faulty validation data...")
+        print(f"  Faults: {fault_nums}")
+        print(f"  Simulations per fault: {n_sims}")
+        print(f"  Duration: {duration} hours")
+        print(f"  Fault onset: {fault_onset} hour")
+
+        all_data = []
+
+        for fault_num in fault_nums:
+            print(f"\nFault {fault_num}: {FAULT_DESCRIPTIONS.get(fault_num, 'Unknown')}")
+
+            shutdown_count = 0
+
+            for sim_run in range(1, n_sims + 1):
+                seed = self._get_seed(sim_run, split="val", fault_number=fault_num)
+
+                if sim_run % 100 == 0 or sim_run == 1:
+                    print(f"  Simulation {sim_run}/{n_sims}...")
+
+                result = self._run_simulation(
+                    seed, duration, fault_number=fault_num, fault_onset_hours=fault_onset
+                )
+
+                if result is None:
+                    continue
+
+                if result["shutdown"]:
+                    shutdown_count += 1
+
+                n_samples = result["data"].shape[0]
+
+                for sample_idx in range(n_samples):
+                    row = np.zeros(55)
+                    row[0] = fault_num
+                    row[1] = sim_run
+                    row[2] = sample_idx + 1
+                    row[3:] = result["data"][sample_idx]
+                    all_data.append(row)
+
+            if shutdown_count > 0:
+                print(f"  Shutdowns: {shutdown_count}/{n_sims}")
+
+        data_array = np.array(all_data)
+        print(f"\nTotal rows generated: {len(data_array)}")
+
+        if save:
+            self._save_data(data_array, "faulty_validation.npy")
+
+        return data_array
+
     def _save_data(self, data: np.ndarray, filename: str) -> Path:
         """Save data to output directory."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -850,9 +999,10 @@ class Rieth2017DatasetGenerator:
         self,
         n_simulations: Optional[int] = None,
         fault_numbers: Optional[List[int]] = None,
+        include_validation: bool = True,
     ) -> Dict[str, np.ndarray]:
         """
-        Generate complete dataset (all 4 files).
+        Generate complete dataset (6 files with validation, or 4 without).
 
         Parameters
         ----------
@@ -860,12 +1010,14 @@ class Rieth2017DatasetGenerator:
             Simulations per fault (default: 500)
         fault_numbers : list of int, optional
             Fault numbers to include (default: 1-20)
+        include_validation : bool
+            Whether to generate validation sets (default: True)
 
         Returns
         -------
         dict
-            Dictionary with keys: fault_free_training, fault_free_testing,
-            faulty_training, faulty_testing
+            Dictionary with keys: fault_free_training, fault_free_validation,
+            fault_free_testing, faulty_training, faulty_validation, faulty_testing
         """
         print("=" * 60)
         print("Rieth 2017 TEP Dataset Generation")
@@ -877,16 +1029,24 @@ class Rieth2017DatasetGenerator:
         results["fault_free_training"] = self.generate_fault_free_training(n_simulations)
         print()
 
+        if include_validation:
+            results["fault_free_validation"] = self.generate_fault_free_validation(n_simulations)
+            print()
+
         results["fault_free_testing"] = self.generate_fault_free_testing(n_simulations)
         print()
 
         results["faulty_training"] = self.generate_faulty_training(fault_numbers, n_simulations)
         print()
 
+        if include_validation:
+            results["faulty_validation"] = self.generate_faulty_validation(fault_numbers, n_simulations)
+            print()
+
         results["faulty_testing"] = self.generate_faulty_testing(fault_numbers, n_simulations)
 
         # Save metadata
-        self._save_metadata(n_simulations, fault_numbers)
+        self._save_metadata(n_simulations, fault_numbers, include_validation)
 
         print()
         print("=" * 60)
@@ -900,10 +1060,22 @@ class Rieth2017DatasetGenerator:
         self,
         n_simulations: Optional[int],
         fault_numbers: Optional[List[int]],
+        include_validation: bool = True,
     ) -> None:
         """Save dataset metadata."""
+        files = {
+            "fault_free_training.npy": "Normal operation training data",
+            "fault_free_testing.npy": "Normal operation testing data",
+            "faulty_training.npy": "Faulty training data (fault active from t=0)",
+            "faulty_testing.npy": "Faulty testing data (fault at t=1h)",
+        }
+
+        if include_validation:
+            files["fault_free_validation.npy"] = "Normal operation validation data"
+            files["faulty_validation.npy"] = "Faulty validation data (fault at t=1h)"
+
         metadata = {
-            "description": "TEP dataset matching Rieth et al. 2017 specifications",
+            "description": "TEP dataset matching Rieth et al. 2017 specifications (extended with validation set)",
             "reference": {
                 "authors": "Rieth, C.A., Amsel, B.D., Tran, R., Cook, M.B.",
                 "title": "Issues and Advances in Anomaly Detection Evaluation for Joint Human-Automated Systems",
@@ -913,10 +1085,12 @@ class Rieth2017DatasetGenerator:
             "parameters": {
                 "n_simulations": n_simulations or self.n_simulations,
                 "train_duration_hours": RIETH_PARAMS["train_duration_hours"],
+                "val_duration_hours": RIETH_PARAMS["val_duration_hours"],
                 "test_duration_hours": RIETH_PARAMS["test_duration_hours"],
                 "sampling_interval_min": RIETH_PARAMS["sampling_interval_min"],
                 "fault_onset_hours": RIETH_PARAMS["fault_onset_hours"],
                 "fault_numbers": fault_numbers or list(range(1, 21)),
+                "include_validation": include_validation,
             },
             "columns": {
                 "0": "faultNumber",
@@ -925,12 +1099,7 @@ class Rieth2017DatasetGenerator:
                 "3-43": "xmeas_1 to xmeas_41 (41 measured variables)",
                 "44-54": "xmv_1 to xmv_11 (11 manipulated variables)",
             },
-            "files": {
-                "fault_free_training.npy": "Normal operation training data",
-                "fault_free_testing.npy": "Normal operation testing data",
-                "faulty_training.npy": "Faulty training data (fault active from t=0)",
-                "faulty_testing.npy": "Faulty testing data (fault at t=1h)",
-            },
+            "files": files,
         }
 
         filepath = self.output_dir / "metadata.json"
@@ -961,8 +1130,10 @@ def load_rieth2017_dataset(
 
     files = {
         "fault_free_training": "fault_free_training.npy",
+        "fault_free_validation": "fault_free_validation.npy",
         "fault_free_testing": "fault_free_testing.npy",
         "faulty_training": "faulty_training.npy",
+        "faulty_validation": "faulty_validation.npy",
         "faulty_testing": "faulty_testing.npy",
     }
 
@@ -1188,6 +1359,11 @@ def main():
         default=None,
         help="Comma-separated fault numbers to generate (e.g., '1,2,4,6')",
     )
+    parser.add_argument(
+        "--no-validation",
+        action="store_true",
+        help="Skip generating validation sets (only train/test)",
+    )
 
     args = parser.parse_args()
 
@@ -1201,7 +1377,7 @@ def main():
         example_generate_full()
     elif args.small:
         example_generate_small()
-    elif args.n_simulations or args.faults or args.output_dir:
+    elif args.n_simulations or args.faults or args.output_dir or args.no_validation:
         # Custom generation
         generator = Rieth2017DatasetGenerator(
             output_dir=args.output_dir,
@@ -1215,6 +1391,7 @@ def main():
         generator.generate_all(
             n_simulations=args.n_simulations,
             fault_numbers=fault_numbers,
+            include_validation=not args.no_validation,
         )
     else:
         # Default: show help
@@ -1224,12 +1401,21 @@ def main():
         print("This script generates TEP datasets matching the specifications")
         print("of Rieth et al. (2017) using the local TEP simulator.")
         print()
+        print("Output files (6 total with validation):")
+        print("  - fault_free_training.npy    (25h, normal, fault from t=0)")
+        print("  - fault_free_validation.npy  (48h, normal, fault at t=1h)")
+        print("  - fault_free_testing.npy     (48h, normal, fault at t=1h)")
+        print("  - faulty_training.npy        (25h, faulty, fault from t=0)")
+        print("  - faulty_validation.npy      (48h, faulty, fault at t=1h)")
+        print("  - faulty_testing.npy         (48h, faulty, fault at t=1h)")
+        print()
         print("Generate data:")
         print("  python rieth2017_dataset.py --small    # Quick test (5 sims)")
         print("  python rieth2017_dataset.py --full     # Full dataset (500 sims)")
         print()
         print("Custom generation:")
         print("  python rieth2017_dataset.py --n-simulations 100 --faults 1,2,4,6")
+        print("  python rieth2017_dataset.py --no-validation  # Skip validation sets")
         print()
         print("Compare with original:")
         print("  python rieth2017_dataset.py --download-harvard  # Download original")

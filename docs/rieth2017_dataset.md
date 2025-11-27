@@ -57,14 +57,16 @@ The dataset consists of 4 RData files:
 
 ### Simulation Parameters
 
-| Parameter | Training | Testing |
-|-----------|----------|---------|
-| Duration | 25 hours | 48 hours |
-| Sampling rate | 3 minutes | 3 minutes |
-| Samples per run | 500 | 960 |
-| Simulations per fault | 500 | 500 |
-| Operating mode | Mode 1 | Mode 1 |
-| Fault introduction | 1 hour | 1 hour |
+| Parameter | Training | Validation | Testing |
+|-----------|----------|------------|---------|
+| Duration | 25 hours | 48 hours | 48 hours |
+| Sampling rate | 3 minutes | 3 minutes | 3 minutes |
+| Samples per run | 500 | 960 | 960 |
+| Simulations per fault | 500 | 500 | 500 |
+| Operating mode | Mode 1 | Mode 1 | Mode 1 |
+| Fault introduction | t=0 | t=1 hour | t=1 hour |
+
+**Note:** The validation set is an extension to the original Rieth 2017 dataset for machine learning workflows requiring train/validation/test splits. It uses independent random seeds that do not overlap with training or testing data.
 
 ## Fault Types (IDV 1-20)
 
