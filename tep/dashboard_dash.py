@@ -457,19 +457,23 @@ def create_empty_figure():
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2']
     dashes = ['solid', 'dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
 
+    # Global trace counter for unique colors/dashes across all subplots
+    trace_idx = 0
+
     for idx, (title, signals) in enumerate(PLOT_CONFIGS):
         row = idx // 2 + 1
         col = idx % 2 + 1
 
-        for color_idx, (label, _) in enumerate(signals):
+        for label, _ in signals:
             fig.add_trace(
                 go.Scatter(x=[], y=[], name=label, mode='lines',
-                          line=dict(color=colors[color_idx % len(colors)],
+                          line=dict(color=colors[trace_idx % len(colors)],
                                    width=2,
-                                   dash=dashes[color_idx % len(dashes)]),
+                                   dash=dashes[trace_idx % len(dashes)]),
                           showlegend=True, legendgroup=f'group{idx}'),
                 row=row, col=col
             )
+            trace_idx += 1
 
         fig.update_xaxes(title_text="Time (min)", row=row, col=col)
 
@@ -750,6 +754,9 @@ def create_figure_with_data():
     time_data_full = sim_data['time']
     time_data = decimate_data(time_data_full, max_points)
 
+    # Global trace counter for unique colors/dashes across all subplots
+    trace_idx = 0
+
     for idx, (title, signals) in enumerate(PLOT_CONFIGS):
         row = idx // 2 + 1
         col = idx % 2 + 1
@@ -758,7 +765,7 @@ def create_figure_with_data():
         y_min_all = float('inf')
         y_max_all = float('-inf')
 
-        for color_idx, (label, meas_idx) in enumerate(signals):
+        for label, meas_idx in signals:
             y_data_full = sim_data['measurements'].get(meas_idx, [])
 
             # Compute min/max directly without creating intermediate list
@@ -775,14 +782,15 @@ def create_figure_with_data():
                     y=y_data,
                     name=label,
                     mode='lines',
-                    line=dict(color=colors[color_idx % len(colors)],
+                    line=dict(color=colors[trace_idx % len(colors)],
                              width=2,
-                             dash=dashes[color_idx % len(dashes)]),
+                             dash=dashes[trace_idx % len(dashes)]),
                     legendgroup=f'group{idx}',
                     showlegend=True,
                 ),
                 row=row, col=col
             )
+            trace_idx += 1
 
         # Set y-axis range with margin for autoscaling
         if y_min_all != float('inf'):
