@@ -15,10 +15,11 @@ teprob_wrapper = custom_target('teprob_wrapper',
 fortranobject_c = incdir_f2py / 'fortranobject.c'
 
 # Build the extension module
+# Use install_dir to place in tep/_fortran within site-packages
 py.extension_module('teprob',
   ['teprob.f', 'temain_mod.f', teprob_wrapper, fortranobject_c],
   include_directories: inc_np,
   dependencies: py_dep,
-  subdir: 'tep/_fortran',
   install: true,
+  install_dir: py.get_install_dir() / 'tep' / '_fortran',
 )
