@@ -65,3 +65,23 @@ venv.bak/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Fortran build artifacts
+*.o
+*.so
+*.mod
+fortran/*.o
+tep/_fortran/*.so
+
+# Meson build directory
+builddir/
+
+# Generated data files
+TE_data_*.dat
+
+# Test executables
+temain_mod_test
+tep_fortran
+
+# Comparison images (generated during development)
+*_comparison*.png
