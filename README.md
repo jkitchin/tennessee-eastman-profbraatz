@@ -15,8 +15,10 @@ Python wrapper developed with Claude Code by John Kitchin.
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
 - **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
 - **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
+- **Batch simulation CLI** (`tep-sim`) for scripted data generation with Fortran-compatible output
 - **Real-time streaming interface** for dashboard integration
-- **Interactive web dashboard** with live plotting and controls
+- **Interactive web dashboard** (`tep-web`) with live plotting and controls
+- **Graphical plotting** of simulation results (optional matplotlib dependency)
 - **Reproducible simulations** with seeded random number generation
 - **Exact Fortran results** via f2py wrapper (requires gfortran)
 
@@ -102,9 +104,56 @@ The web dashboard provides:
 - Manual valve manipulation
 - Data export to CSV
 
+### Batch Simulation CLI
+
+The `tep-sim` command runs batch simulations with configurable faults, duration, and output format:
+
+```bash
+# Run 8-hour normal operation simulation
+tep-sim --duration 8 --output normal.dat
+
+# Run with fault 1 (A/C Feed Ratio step) starting at 1 hour
+tep-sim --duration 8 --faults 1 --fault-times 1.0 --output fault1.dat
+
+# Multiple faults with different start times
+tep-sim --duration 8 --faults 1,4,7 --fault-times 1.0,2.0,3.0 --output multi_fault.dat
+
+# Use specific random seed for reproducibility
+tep-sim --duration 8 --seed 12345 --output reproducible.dat
+
+# Output in original Fortran multi-file format (15 .dat files)
+tep-sim --duration 8 --faults 1 --multi-file --output ./data/
+
+# Display results graphically
+tep-sim --duration 2 --faults 1 --plot
+
+# Save plot to file
+tep-sim --duration 2 --faults 1 --plot-save results.png
+
+# List all available faults
+tep-sim --list-faults
+```
+
+**CLI Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-d, --duration` | Simulation duration in hours (default: 8.0) |
+| `-f, --faults` | Fault IDs to activate (e.g., "1", "1,2,5", "1-5") |
+| `-t, --fault-times` | Fault start times in hours (default: 1.0) |
+| `-s, --seed` | Random seed for reproducibility |
+| `-o, --output` | Output file path (default: tep_data.dat) |
+| `-m, --multi-file` | Output in original Fortran multi-file format |
+| `-r, --record-interval` | Recording interval in seconds (default: 180) |
+| `-p, --plot` | Display results graphically |
+| `--plot-save` | Save plot to file |
+| `-q, --quiet` | Suppress progress output |
+| `--list-faults` | List available faults and exit |
+
 ## Documentation
 
 - [API Reference](docs/api.md) - Detailed API documentation
+- [CLI Guide](docs/cli.md) - Batch simulation CLI documentation
 - [Dashboard Guide](docs/dashboard.md) - Interactive GUI documentation
 - [Examples](examples/) - Usage examples and tutorials
 
@@ -113,12 +162,13 @@ The web dashboard provides:
 ```
 tep/
 ├── __init__.py          # Package exports
+├── cli.py               # Batch simulation CLI (tep-sim command)
 ├── constants.py         # Physical constants, initial states, variable names
 ├── controllers.py       # PI controllers, decentralized control
 ├── fortran_backend.py   # f2py wrapper for Fortran TEINIT/TEFUNC
 ├── simulator.py         # High-level TEPSimulator interface
 ├── dashboard.py         # Interactive tkinter GUI dashboard
-├── dashboard_dash.py    # Web-based Dash dashboard
+├── dashboard_dash.py    # Web-based Dash dashboard (tep-web command)
 └── _fortran/            # Compiled Fortran extension (built during install)
     └── teprob.cpython-*.so
 ```

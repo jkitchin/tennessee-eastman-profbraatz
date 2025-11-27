@@ -50,6 +50,7 @@ dev = [
 
 [project.scripts]
 tep-web = "tep.dashboard_dash:main"
+tep-sim = "tep.cli:main"
 
 [tool.meson-python.args]
 setup = ['-Dfortran=auto']
