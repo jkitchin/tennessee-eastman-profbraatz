@@ -8,11 +8,10 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         python-version: ['3.10', '3.11', '3.12']
 
     steps:
@@ -23,16 +22,10 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install gfortran (Ubuntu)
-      if: runner.os == 'Linux'
+    - name: Install gfortran
       run: |
         sudo apt-get update
         sudo apt-get install -y gfortran
-
-    - name: Install gfortran (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install gcc
 
     - name: Install dependencies
       run: |
