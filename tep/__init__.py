@@ -1,14 +1,21 @@
 """
-Tennessee Eastman Process (TEP) Simulator - Pure Python Implementation
+Tennessee Eastman Process (TEP) Simulator
 
-A faithful translation of the original Fortran code by James J. Downs and Ernest F. Vogel,
+This package provides a Python interface to the Tennessee Eastman Process
+simulator using the original Fortran code via f2py for exact reproduction
+of simulation results.
+
+Based on the original Fortran code by James J. Downs and Ernest F. Vogel,
 with modifications by Evan L. Russell, Leo H. Chiang, and Richard D. Braatz.
 
-This modular implementation is designed for:
+This implementation is designed for:
 - Process simulation and control research
 - Fault detection and diagnosis studies
 - Real-time dashboard integration
 - Educational purposes
+
+Requirements:
+    - Fortran compiler (gfortran) during installation
 
 References:
     J.J. Downs and E.F. Vogel, "A plant-wide industrial process control problem,"
@@ -19,19 +26,42 @@ References:
 """
 
 from .simulator import TEPSimulator
-from .process import TEProcess
+from .fortran_backend import FortranTEProcess
 from .controllers import PIController, DecentralizedController
 from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES,
     COMPONENT_NAMES, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES, DISTURBANCE_NAMES
 )
 
-__version__ = "1.1.0"
-__author__ = "Python translation of Downs & Vogel (1993)"
+__version__ = "2.0.0"
+__author__ = "Fortran wrapper of Downs & Vogel (1993)"
+
+
+def get_available_backends():
+    """Get list of available simulation backends.
+
+    Returns
+    -------
+    list
+        List containing 'fortran' (only backend available).
+    """
+    return ["fortran"]
+
+
+def get_default_backend():
+    """Get the default backend name.
+
+    Returns
+    -------
+    str
+        Always returns 'fortran'.
+    """
+    return "fortran"
+
 
 __all__ = [
     "TEPSimulator",
-    "TEProcess",
+    "FortranTEProcess",
     "PIController",
     "DecentralizedController",
     "NUM_STATES",
@@ -42,6 +72,8 @@ __all__ = [
     "MEASUREMENT_NAMES",
     "MANIPULATED_VAR_NAMES",
     "DISTURBANCE_NAMES",
+    "get_available_backends",
+    "get_default_backend",
 ]
 
 

@@ -3,14 +3,14 @@
 
 .PHONY: help install install-dev install-gui test test-verbose test-coverage \
         lint format dashboard run-example clean clean-pyc clean-build \
-        docs build publish
+        docs build publish backend-info backend-test
 
 # Default target
 help:
 	@echo "Tennessee Eastman Process Simulator - Available targets:"
 	@echo ""
 	@echo "  Installation:"
-	@echo "    install        Install the package"
+	@echo "    install        Install the package (requires Fortran compiler)"
 	@echo "    install-dev    Install with development dependencies"
 	@echo "    install-gui    Install with GUI dashboard support"
 	@echo "    install-all    Install with all optional dependencies"
@@ -35,9 +35,13 @@ help:
 	@echo "    build          Build distribution packages"
 	@echo "    clean          Clean all build artifacts"
 	@echo ""
-	@echo "  Fortran (original code):"
-	@echo "    fortran-build  Compile original Fortran code"
-	@echo "    fortran-run    Build and run Fortran simulation"
+	@echo "  Backends:"
+	@echo "    backend-info   Show available simulation backends"
+	@echo "    backend-test   Test Fortran vs Python backend parity"
+	@echo ""
+	@echo "  Fortran (standalone executable):"
+	@echo "    fortran-build  Compile original Fortran code as standalone"
+	@echo "    fortran-run    Build and run standalone Fortran simulation"
 	@echo "    fortran-clean  Clean Fortran build artifacts"
 	@echo ""
 
@@ -46,16 +50,16 @@ help:
 # ============================================================================
 
 install:
-	pip install -e .
+	pip install .
 
 install-dev:
-	pip install -e ".[dev]"
+	pip install ".[dev]"
 
 install-gui:
-	pip install -e ".[gui]"
+	pip install ".[gui]"
 
 install-all:
-	pip install -e ".[dev,gui]"
+	pip install ".[dev,gui]"
 
 # ============================================================================
 # Testing targets
@@ -267,3 +271,23 @@ fortran-run: fortran-build
 
 fortran-clean:
 	rm -f tep_fortran temain_mod_local.f a.out TE_data_*.dat
+
+# ============================================================================
+# Backend targets
+# ============================================================================
+
+backend-info:
+	@echo "TEP Simulator Backend Information"
+	@echo "================================="
+	@cd /tmp && python -c "\
+from tep import get_available_backends, get_default_backend; \
+print(f'Available backends: {get_available_backends()}'); \
+print(f'Default backend: {get_default_backend()}'); \
+from tep import TEPSimulator; \
+sim = TEPSimulator(); \
+print(f'TEPSimulator uses: {sim.backend}')"
+
+backend-test:
+	@echo "Testing Backend Parity (Python vs Fortran)"
+	@echo "==========================================="
+	cd /tmp && python $(CURDIR)/examples/compare_fortran_python.py

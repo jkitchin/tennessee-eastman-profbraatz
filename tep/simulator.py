@@ -3,19 +3,20 @@ Main Tennessee Eastman Process Simulator.
 
 This module provides the high-level TEPSimulator class that integrates
 all components and provides an easy-to-use interface for simulation.
+
+This version uses the Fortran backend exclusively via f2py for exact
+reproduction of the original simulation results.
 """
 
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional, Callable, Tuple, Union
 from enum import Enum
-from .process import TEProcess
+from .fortran_backend import FortranTEProcess
 from .controllers import DecentralizedController, ManualController, PIController
-from .integrators import Integrator, IntegratorType
-from .disturbances import DisturbanceManager
 from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS,
-    INITIAL_STATES, DEFAULT_RANDOM_SEED
+    DEFAULT_RANDOM_SEED
 )
 
 
@@ -52,7 +53,8 @@ class TEPSimulator:
     Tennessee Eastman Process Simulator.
 
     This class provides a high-level interface for running TEP simulations
-    with various control modes and disturbance scenarios.
+    with various control modes and disturbance scenarios. It uses the original
+    Fortran code via f2py for exact reproduction of simulation results.
 
     Example usage:
         >>> sim = TEPSimulator()
@@ -73,7 +75,6 @@ class TEPSimulator:
         self,
         random_seed: int = None,
         control_mode: ControlMode = ControlMode.CLOSED_LOOP,
-        integrator: IntegratorType = IntegratorType.EULER
     ):
         """
         Initialize the TEP simulator.
@@ -81,7 +82,9 @@ class TEPSimulator:
         Args:
             random_seed: Random seed for reproducibility
             control_mode: Control mode (open_loop, closed_loop, or manual)
-            integrator: Integration method to use
+
+        Raises:
+            ImportError: If Fortran extension is not available
         """
         if random_seed is None:
             random_seed = DEFAULT_RANDOM_SEED
@@ -89,14 +92,11 @@ class TEPSimulator:
         self.random_seed = random_seed
         self.control_mode = control_mode
 
-        # Initialize process
-        self.process = TEProcess(random_seed)
+        # Initialize process with Fortran backend
+        self.process = FortranTEProcess(random_seed)
 
         # Initialize controller based on mode
         self._init_controller()
-
-        # Initialize integrator
-        self.integrator = Integrator(integrator)
 
         # Simulation state
         self.time = 0.0  # Current time (hours)
@@ -156,6 +156,15 @@ class TEPSimulator:
         """Turn off all disturbances."""
         self.process.disturbances.clear_all_disturbances()
 
+    def get_disturbances(self) -> np.ndarray:
+        """Get current disturbance vector (20 values, 0 or 1)."""
+        return self.process.idv
+
+    def get_active_disturbances(self) -> list:
+        """Get list of active disturbance indices (1-based)."""
+        idv = self.process.idv
+        return [i + 1 for i in range(len(idv)) if idv[i] != 0]
+
     def set_mv(self, index: int, value: float):
         """
         Set a manipulated variable (for manual control).
@@ -183,6 +192,11 @@ class TEPSimulator:
     def is_shutdown(self) -> bool:
         """Check if process is in shutdown state."""
         return self.process.is_shutdown()
+
+    @property
+    def backend(self) -> str:
+        """Get the current simulation backend (always 'fortran')."""
+        return "fortran"
 
     def step(self, n_steps: int = 1) -> bool:
         """

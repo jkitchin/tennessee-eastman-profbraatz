@@ -7,17 +7,25 @@ for running batch simulations and accessing results.
 """
 
 import numpy as np
-from tep import TEPSimulator
+from tep import TEPSimulator, get_available_backends, get_default_backend
 from tep.simulator import ControlMode
 
 
 def main():
+    # Show available backends
+    print("TEP Simulator - Basic Example")
+    print("=" * 50)
+    print(f"Available backends: {get_available_backends()}")
+    print(f"Default backend: {get_default_backend()}")
+    print()
+
     # Create simulator with default settings (closed-loop control)
     print("Creating TEP simulator...")
     sim = TEPSimulator(
         random_seed=12345,  # For reproducibility
         control_mode=ControlMode.CLOSED_LOOP
     )
+    print(f"Using backend: {sim.backend}")
 
     # Initialize to steady state
     sim.initialize()

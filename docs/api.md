@@ -7,7 +7,7 @@ This document provides detailed API documentation for the Tennessee Eastman Proc
 - [TEPSimulator](#tepsimulator)
 - [SimulationResult](#simulationresult)
 - [Controllers](#controllers)
-- [TEProcess](#teprocess)
+- [FortranTEProcess](#fortranteprocess)
 - [Constants](#constants)
 
 ---
@@ -28,8 +28,7 @@ from tep.simulator import ControlMode
 ```python
 TEPSimulator(
     random_seed: int = None,
-    control_mode: ControlMode = ControlMode.CLOSED_LOOP,
-    integrator: IntegratorType = IntegratorType.EULER
+    control_mode: ControlMode = ControlMode.CLOSED_LOOP
 )
 ```
 
@@ -39,7 +38,8 @@ TEPSimulator(
 |-----------|------|---------|-------------|
 | `random_seed` | `int` | `1431655765` | Random seed for reproducible simulations |
 | `control_mode` | `ControlMode` | `CLOSED_LOOP` | Control mode (see below) |
-| `integrator` | `IntegratorType` | `EULER` | Integration method |
+
+**Note:** The simulator uses the Fortran backend via f2py, which requires a Fortran compiler (gfortran) during installation.
 
 **Control Modes:**
 
@@ -376,14 +376,14 @@ result = sim.simulate_with_controller(
 
 ---
 
-## TEProcess
+## FortranTEProcess
 
-Low-level process model (direct TEFUNC equivalent).
+Low-level Fortran process interface via f2py (direct TEINIT/TEFUNC wrapper).
 
 ```python
-from tep import TEProcess
+from tep import FortranTEProcess
 
-process = TEProcess(random_seed=12345)
+process = FortranTEProcess(random_seed=12345)
 process._initialize()
 
 # Evaluate derivatives
@@ -395,6 +395,8 @@ xmv = process.get_xmv()
 process.set_xmv(1, 50.0)
 process.set_idv(1, 1)
 ```
+
+This class wraps the original Fortran subroutines `TEINIT` and `TEFUNC` via f2py, providing exact numerical results matching the original TEP benchmark.
 
 ---
 
