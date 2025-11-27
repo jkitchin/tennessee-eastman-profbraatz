@@ -161,7 +161,7 @@ The dataset consists of 4 RData files:
 
 ## Generating the Dataset
 
-This repository includes a script to reproduce the Rieth 2017 dataset using the local TEP simulator. See `examples/rieth2017_dataset.py` for the full implementation.
+This repository includes a script to reproduce the Rieth 2017 dataset using the local TEP simulator. All parameters are configurable, with defaults matching the original Rieth 2017 specifications. See `examples/rieth2017_dataset.py` for the full implementation.
 
 ### Quick Start
 
@@ -176,16 +176,51 @@ python examples/rieth2017_dataset.py --full
 python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,2,4,6
 ```
 
+### Configurable Parameters
+
+All simulation parameters can be customized via CLI or Python API:
+
+| Parameter | CLI Flag | Default | Description |
+|-----------|----------|---------|-------------|
+| `n_simulations` | `--n-simulations` | 500 | Simulations per fault type |
+| `train_duration_hours` | `--train-duration` | 25.0 | Training simulation duration (hours) |
+| `val_duration_hours` | `--val-duration` | 48.0 | Validation simulation duration (hours) |
+| `test_duration_hours` | `--test-duration` | 48.0 | Testing simulation duration (hours) |
+| `sampling_interval_min` | `--sampling-interval` | 3.0 | Sampling interval (minutes) |
+| `fault_onset_hours` | `--fault-onset` | 1.0 | Fault onset time for val/test (hours) |
+| `n_faults` | `--faults` | 20 | Number of fault types (or specific list) |
+
+**CLI example with custom parameters:**
+
+```bash
+python examples/rieth2017_dataset.py \
+    --n-simulations 50 \
+    --train-duration 10 \
+    --test-duration 20 \
+    --sampling-interval 1 \
+    --fault-onset 0.5 \
+    --faults 1,4,6
+```
+
 ### Python API
 
 ```python
 from examples.rieth2017_dataset import Rieth2017DatasetGenerator
 
-# Create generator
+# Default Rieth 2017 parameters
 generator = Rieth2017DatasetGenerator(output_dir="./data/rieth2017")
-
-# Generate all data files
 generator.generate_all()
+
+# Custom parameters
+generator = Rieth2017DatasetGenerator(
+    output_dir="./data/custom",
+    n_simulations=100,
+    train_duration_hours=10.0,
+    test_duration_hours=20.0,
+    sampling_interval_min=1.0,
+    fault_onset_hours=0.5,
+)
+generator.generate_all(fault_numbers=[1, 4, 6])
 
 # Or generate specific files
 generator.generate_fault_free_training(n_simulations=500)

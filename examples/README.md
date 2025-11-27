@@ -73,12 +73,12 @@ python examples/data_generation.py
 
 ### rieth2017_dataset.py
 
-Generates TEP datasets matching the Rieth et al. (2017) specifications for anomaly detection research.
+Generates TEP datasets with configurable parameters. Defaults match Rieth et al. (2017) specifications for anomaly detection research.
 
 **Topics covered:**
-- Generating datasets with 500 simulations per fault type
+- Generating datasets with configurable simulations per fault type
 - Matching the original dataset structure (55 columns)
-- Training vs testing data (25h vs 48h)
+- Configurable duration, sampling interval, and fault onset time
 - Non-overlapping random seeds for independent simulations
 
 **Run:**
@@ -91,16 +91,33 @@ python examples/rieth2017_dataset.py --full
 
 # Custom: 100 simulations for faults 1, 4, 6 only
 python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,4,6
+
+# Custom timing parameters
+python examples/rieth2017_dataset.py --n-simulations 50 \
+    --train-duration 10 --test-duration 20 \
+    --sampling-interval 1 --fault-onset 0.5
 ```
 
+**Configurable parameters:**
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--n-simulations` | 500 | Simulations per fault type |
+| `--train-duration` | 25.0 | Training duration (hours) |
+| `--val-duration` | 48.0 | Validation duration (hours) |
+| `--test-duration` | 48.0 | Testing duration (hours) |
+| `--sampling-interval` | 3.0 | Sampling interval (minutes) |
+| `--fault-onset` | 1.0 | Fault onset time for val/test (hours) |
+| `--faults` | 1-20 | Comma-separated fault numbers |
+| `--no-validation` | - | Skip validation sets |
+
 **Output files (6 files with validation):**
-- `fault_free_training.npy` - Normal operation training data (25h)
-- `fault_free_validation.npy` - Normal operation validation data (48h)
-- `fault_free_testing.npy` - Normal operation testing data (48h)
-- `faulty_training.npy` - Faulty training data (25h, fault from t=0)
-- `faulty_validation.npy` - Faulty validation data (48h, fault at t=1h)
-- `faulty_testing.npy` - Faulty testing data (48h, fault at t=1h)
-- `metadata.json` - Dataset metadata
+- `fault_free_training.npy` - Normal operation training data
+- `fault_free_validation.npy` - Normal operation validation data
+- `fault_free_testing.npy` - Normal operation testing data
+- `faulty_training.npy` - Faulty training data (fault from t=0)
+- `faulty_validation.npy` - Faulty validation data (fault at onset time)
+- `faulty_testing.npy` - Faulty testing data (fault at onset time)
+- `metadata.json` - Dataset metadata with all parameters
 
 Use `--no-validation` to generate only train/test splits (4 files).
 

@@ -466,10 +466,10 @@ def compare_with_harvard(
 
 class Rieth2017DatasetGenerator:
     """
-    Generate TEP dataset matching Rieth et al. 2017 specifications.
+    Generate TEP dataset with configurable parameters.
 
-    This class generates datasets with 500 simulations per fault type,
-    using independent random seeds for each simulation.
+    By default, generates datasets matching Rieth et al. 2017 specifications:
+    500 simulations per fault type, 25h training / 48h testing, 3-minute sampling.
 
     Parameters
     ----------
@@ -477,32 +477,72 @@ class Rieth2017DatasetGenerator:
         Directory to save generated data files.
     n_simulations : int
         Number of simulations per fault type (default: 500).
+    train_duration_hours : float
+        Duration of training simulations in hours (default: 25.0).
+    val_duration_hours : float
+        Duration of validation simulations in hours (default: 48.0).
+    test_duration_hours : float
+        Duration of testing simulations in hours (default: 48.0).
+    sampling_interval_min : float
+        Sampling interval in minutes (default: 3.0).
+    fault_onset_hours : float
+        Time at which faults are introduced in val/test sets (default: 1.0).
+        Training sets always have faults from t=0.
+    n_faults : int
+        Number of fault types to generate (default: 20, i.e., IDV 1-20).
     seed_offset : int
         Base seed offset for reproducibility.
 
     Examples
     --------
+    >>> # Default Rieth 2017 parameters
     >>> generator = Rieth2017DatasetGenerator(output_dir="./data/rieth2017")
-    >>> generator.generate_fault_free_training()
-    >>> generator.generate_faulty_testing(fault_numbers=[1, 2, 3, 4])
+    >>> generator.generate_all()
+
+    >>> # Custom parameters: shorter simulations, faster sampling
+    >>> generator = Rieth2017DatasetGenerator(
+    ...     output_dir="./data/custom",
+    ...     n_simulations=100,
+    ...     train_duration_hours=10.0,
+    ...     test_duration_hours=20.0,
+    ...     sampling_interval_min=1.0,
+    ...     fault_onset_hours=0.5,
+    ... )
+    >>> generator.generate_all()
     """
 
     def __init__(
         self,
         output_dir: Optional[str] = None,
         n_simulations: int = 500,
+        train_duration_hours: float = 25.0,
+        val_duration_hours: float = 48.0,
+        test_duration_hours: float = 48.0,
+        sampling_interval_min: float = 3.0,
+        fault_onset_hours: float = 1.0,
+        n_faults: int = 20,
         seed_offset: int = 1000000,
     ):
         if output_dir is None:
             output_dir = Path(__file__).parent.parent / "data" / "rieth2017"
         self.output_dir = Path(output_dir)
         self.n_simulations = n_simulations
+        self.train_duration_hours = train_duration_hours
+        self.val_duration_hours = val_duration_hours
+        self.test_duration_hours = test_duration_hours
+        self.sampling_interval_min = sampling_interval_min
+        self.fault_onset_hours = fault_onset_hours
+        self.n_faults = n_faults
         self.seed_offset = seed_offset
 
         # Separate seed ranges for training, validation, and testing (non-overlapping)
         self.train_seed_base = seed_offset
         self.val_seed_base = seed_offset + 1000000
         self.test_seed_base = seed_offset + 2000000
+
+        # Calculate record interval from sampling interval
+        # dt_hours = 1/3600 (1 second), so interval_min * 60 = steps
+        self.record_interval = int(sampling_interval_min * 60)
 
     def _get_seed(
         self,
@@ -541,10 +581,6 @@ class Rieth2017DatasetGenerator:
         sim = TEPSimulator(random_seed=seed, control_mode=ControlMode.CLOSED_LOOP)
         sim.initialize()
 
-        # Calculate record interval for 3-minute sampling
-        # dt_hours = 1/3600 (1 second), so 3 minutes = 180 seconds = 180 steps
-        record_interval = 180
-
         # Set up disturbance if fault > 0
         disturbances = None
         if fault_number > 0:
@@ -553,7 +589,7 @@ class Rieth2017DatasetGenerator:
         try:
             result = sim.simulate(
                 duration_hours=duration_hours,
-                record_interval=record_interval,
+                record_interval=self.record_interval,
                 disturbances=disturbances,
             )
 
@@ -596,11 +632,11 @@ class Rieth2017DatasetGenerator:
             Columns: faultNumber, simulationRun, sample, xmeas_1..41, xmv_1..11
         """
         n_sims = n_simulations or self.n_simulations
-        duration = RIETH_PARAMS["train_duration_hours"]
+        duration = self.train_duration_hours
 
         print(f"Generating fault-free training data ({n_sims} simulations)...")
         print(f"  Duration: {duration} hours")
-        print(f"  Sampling: {RIETH_PARAMS['sampling_interval_min']} minutes")
+        print(f"  Sampling: {self.sampling_interval_min} minutes")
 
         all_data = []
 
@@ -655,10 +691,11 @@ class Rieth2017DatasetGenerator:
             Array of shape (n_simulations * n_samples, 55)
         """
         n_sims = n_simulations or self.n_simulations
-        duration = RIETH_PARAMS["test_duration_hours"]
+        duration = self.test_duration_hours
 
         print(f"Generating fault-free testing data ({n_sims} simulations)...")
         print(f"  Duration: {duration} hours")
+        print(f"  Sampling: {self.sampling_interval_min} minutes")
 
         all_data = []
 
@@ -712,10 +749,11 @@ class Rieth2017DatasetGenerator:
             Array of shape (n_simulations * n_samples, 55)
         """
         n_sims = n_simulations or self.n_simulations
-        duration = RIETH_PARAMS["val_duration_hours"]
+        duration = self.val_duration_hours
 
         print(f"Generating fault-free validation data ({n_sims} simulations)...")
         print(f"  Duration: {duration} hours")
+        print(f"  Sampling: {self.sampling_interval_min} minutes")
 
         all_data = []
 
@@ -773,14 +811,16 @@ class Rieth2017DatasetGenerator:
         np.ndarray
             Array of shape (n_faults * n_simulations * n_samples, 55)
         """
-        fault_nums = fault_numbers or list(range(1, RIETH_PARAMS["n_faults"] + 1))
+        fault_nums = fault_numbers or list(range(1, self.n_faults + 1))
         n_sims = n_simulations or self.n_simulations
-        duration = RIETH_PARAMS["train_duration_hours"]
+        duration = self.train_duration_hours
 
         print(f"Generating faulty training data...")
         print(f"  Faults: {fault_nums}")
         print(f"  Simulations per fault: {n_sims}")
         print(f"  Duration: {duration} hours")
+        print(f"  Sampling: {self.sampling_interval_min} minutes")
+        print(f"  Fault onset: t=0 (training)")
 
         all_data = []
 
@@ -852,15 +892,16 @@ class Rieth2017DatasetGenerator:
         np.ndarray
             Array of shape (n_faults * n_simulations * n_samples, 55)
         """
-        fault_nums = fault_numbers or list(range(1, RIETH_PARAMS["n_faults"] + 1))
+        fault_nums = fault_numbers or list(range(1, self.n_faults + 1))
         n_sims = n_simulations or self.n_simulations
-        duration = RIETH_PARAMS["test_duration_hours"]
-        fault_onset = RIETH_PARAMS["fault_onset_hours"]
+        duration = self.test_duration_hours
+        fault_onset = self.fault_onset_hours
 
         print(f"Generating faulty testing data...")
         print(f"  Faults: {fault_nums}")
         print(f"  Simulations per fault: {n_sims}")
         print(f"  Duration: {duration} hours")
+        print(f"  Sampling: {self.sampling_interval_min} minutes")
         print(f"  Fault onset: {fault_onset} hour")
 
         all_data = []
@@ -932,15 +973,16 @@ class Rieth2017DatasetGenerator:
         np.ndarray
             Array of shape (n_faults * n_simulations * n_samples, 55)
         """
-        fault_nums = fault_numbers or list(range(1, RIETH_PARAMS["n_faults"] + 1))
+        fault_nums = fault_numbers or list(range(1, self.n_faults + 1))
         n_sims = n_simulations or self.n_simulations
-        duration = RIETH_PARAMS["val_duration_hours"]
-        fault_onset = RIETH_PARAMS["fault_onset_hours"]
+        duration = self.val_duration_hours
+        fault_onset = self.fault_onset_hours
 
         print(f"Generating faulty validation data...")
         print(f"  Faults: {fault_nums}")
         print(f"  Simulations per fault: {n_sims}")
         print(f"  Duration: {duration} hours")
+        print(f"  Sampling: {self.sampling_interval_min} minutes")
         print(f"  Fault onset: {fault_onset} hour")
 
         all_data = []
@@ -1064,32 +1106,33 @@ class Rieth2017DatasetGenerator:
     ) -> None:
         """Save dataset metadata."""
         files = {
-            "fault_free_training.npy": "Normal operation training data",
-            "fault_free_testing.npy": "Normal operation testing data",
-            "faulty_training.npy": "Faulty training data (fault active from t=0)",
-            "faulty_testing.npy": "Faulty testing data (fault at t=1h)",
+            "fault_free_training.npy": f"Normal operation training data ({self.train_duration_hours}h)",
+            "fault_free_testing.npy": f"Normal operation testing data ({self.test_duration_hours}h)",
+            "faulty_training.npy": f"Faulty training data ({self.train_duration_hours}h, fault from t=0)",
+            "faulty_testing.npy": f"Faulty testing data ({self.test_duration_hours}h, fault at t={self.fault_onset_hours}h)",
         }
 
         if include_validation:
-            files["fault_free_validation.npy"] = "Normal operation validation data"
-            files["faulty_validation.npy"] = "Faulty validation data (fault at t=1h)"
+            files["fault_free_validation.npy"] = f"Normal operation validation data ({self.val_duration_hours}h)"
+            files["faulty_validation.npy"] = f"Faulty validation data ({self.val_duration_hours}h, fault at t={self.fault_onset_hours}h)"
 
         metadata = {
-            "description": "TEP dataset matching Rieth et al. 2017 specifications (extended with validation set)",
+            "description": "TEP dataset generated with configurable parameters",
             "reference": {
                 "authors": "Rieth, C.A., Amsel, B.D., Tran, R., Cook, M.B.",
                 "title": "Issues and Advances in Anomaly Detection Evaluation for Joint Human-Automated Systems",
                 "year": 2017,
                 "doi": "10.1007/978-3-319-60384-1_6",
+                "note": "Default parameters match Rieth et al. 2017 specifications",
             },
             "parameters": {
                 "n_simulations": n_simulations or self.n_simulations,
-                "train_duration_hours": RIETH_PARAMS["train_duration_hours"],
-                "val_duration_hours": RIETH_PARAMS["val_duration_hours"],
-                "test_duration_hours": RIETH_PARAMS["test_duration_hours"],
-                "sampling_interval_min": RIETH_PARAMS["sampling_interval_min"],
-                "fault_onset_hours": RIETH_PARAMS["fault_onset_hours"],
-                "fault_numbers": fault_numbers or list(range(1, 21)),
+                "train_duration_hours": self.train_duration_hours,
+                "val_duration_hours": self.val_duration_hours,
+                "test_duration_hours": self.test_duration_hours,
+                "sampling_interval_min": self.sampling_interval_min,
+                "fault_onset_hours": self.fault_onset_hours,
+                "fault_numbers": fault_numbers or list(range(1, self.n_faults + 1)),
                 "include_validation": include_validation,
             },
             "columns": {
@@ -1364,6 +1407,36 @@ def main():
         action="store_true",
         help="Skip generating validation sets (only train/test)",
     )
+    parser.add_argument(
+        "--train-duration",
+        type=float,
+        default=None,
+        help="Training simulation duration in hours (default: 25.0)",
+    )
+    parser.add_argument(
+        "--val-duration",
+        type=float,
+        default=None,
+        help="Validation simulation duration in hours (default: 48.0)",
+    )
+    parser.add_argument(
+        "--test-duration",
+        type=float,
+        default=None,
+        help="Testing simulation duration in hours (default: 48.0)",
+    )
+    parser.add_argument(
+        "--sampling-interval",
+        type=float,
+        default=None,
+        help="Sampling interval in minutes (default: 3.0)",
+    )
+    parser.add_argument(
+        "--fault-onset",
+        type=float,
+        default=None,
+        help="Fault onset time in hours for val/test sets (default: 1.0)",
+    )
 
     args = parser.parse_args()
 
@@ -1377,12 +1450,26 @@ def main():
         example_generate_full()
     elif args.small:
         example_generate_small()
-    elif args.n_simulations or args.faults or args.output_dir or args.no_validation:
-        # Custom generation
-        generator = Rieth2017DatasetGenerator(
-            output_dir=args.output_dir,
-            n_simulations=args.n_simulations or 500,
-        )
+    elif (args.n_simulations or args.faults or args.output_dir or args.no_validation
+          or args.train_duration or args.val_duration or args.test_duration
+          or args.sampling_interval or args.fault_onset):
+        # Custom generation with configurable parameters
+        generator_kwargs = {"output_dir": args.output_dir}
+
+        if args.n_simulations:
+            generator_kwargs["n_simulations"] = args.n_simulations
+        if args.train_duration:
+            generator_kwargs["train_duration_hours"] = args.train_duration
+        if args.val_duration:
+            generator_kwargs["val_duration_hours"] = args.val_duration
+        if args.test_duration:
+            generator_kwargs["test_duration_hours"] = args.test_duration
+        if args.sampling_interval:
+            generator_kwargs["sampling_interval_min"] = args.sampling_interval
+        if args.fault_onset:
+            generator_kwargs["fault_onset_hours"] = args.fault_onset
+
+        generator = Rieth2017DatasetGenerator(**generator_kwargs)
 
         fault_numbers = None
         if args.faults:
@@ -1398,16 +1485,22 @@ def main():
         print("Rieth et al. 2017 TEP Dataset Generator")
         print("=" * 60)
         print()
-        print("This script generates TEP datasets matching the specifications")
-        print("of Rieth et al. (2017) using the local TEP simulator.")
+        print("Generate TEP datasets with configurable parameters.")
+        print("Defaults match Rieth et al. (2017) specifications.")
+        print()
+        print("Default parameters:")
+        print("  - 500 simulations per fault type")
+        print("  - Training: 25h, Testing/Validation: 48h")
+        print("  - 3-minute sampling interval")
+        print("  - Fault onset at t=1h (val/test), t=0 (training)")
         print()
         print("Output files (6 total with validation):")
-        print("  - fault_free_training.npy    (25h, normal, fault from t=0)")
-        print("  - fault_free_validation.npy  (48h, normal, fault at t=1h)")
-        print("  - fault_free_testing.npy     (48h, normal, fault at t=1h)")
-        print("  - faulty_training.npy        (25h, faulty, fault from t=0)")
-        print("  - faulty_validation.npy      (48h, faulty, fault at t=1h)")
-        print("  - faulty_testing.npy         (48h, faulty, fault at t=1h)")
+        print("  - fault_free_training.npy")
+        print("  - fault_free_validation.npy")
+        print("  - fault_free_testing.npy")
+        print("  - faulty_training.npy")
+        print("  - faulty_validation.npy")
+        print("  - faulty_testing.npy")
         print()
         print("Generate data:")
         print("  python rieth2017_dataset.py --small    # Quick test (5 sims)")
@@ -1416,6 +1509,18 @@ def main():
         print("Custom generation:")
         print("  python rieth2017_dataset.py --n-simulations 100 --faults 1,2,4,6")
         print("  python rieth2017_dataset.py --no-validation  # Skip validation sets")
+        print()
+        print("Custom timing parameters:")
+        print("  --train-duration 10      # Training duration (hours)")
+        print("  --val-duration 20        # Validation duration (hours)")
+        print("  --test-duration 20       # Testing duration (hours)")
+        print("  --sampling-interval 1    # Sampling interval (minutes)")
+        print("  --fault-onset 0.5        # Fault onset time (hours)")
+        print()
+        print("Example with custom parameters:")
+        print("  python rieth2017_dataset.py --n-simulations 50 \\")
+        print("      --train-duration 10 --test-duration 20 \\")
+        print("      --sampling-interval 1 --fault-onset 0.5")
         print()
         print("Compare with original:")
         print("  python rieth2017_dataset.py --download-harvard  # Download original")
