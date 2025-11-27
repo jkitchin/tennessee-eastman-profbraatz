@@ -174,6 +174,91 @@ python examples/rieth2017_dataset.py --full
 
 # Generate a custom dataset
 python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,2,4,6
+
+# Use a preset configuration
+python examples/rieth2017_dataset.py --preset quick
+
+# Generate in parallel with 4 workers
+python examples/rieth2017_dataset.py --preset quick --workers 4
+
+# Output as CSV instead of NumPy
+python examples/rieth2017_dataset.py --preset quick --format csv
+```
+
+### Presets
+
+Named presets provide convenient configurations for common use cases:
+
+| Preset | Simulations | Train | Test | Sampling | Description |
+|--------|-------------|-------|------|----------|-------------|
+| `rieth2017` | 500 | 25h | 48h | 3 min | Original paper specifications |
+| `quick` | 5 | 2h | 4h | 3 min | Fast testing and development |
+| `high-res` | 500 | 25h | 48h | 1 min | Higher temporal resolution |
+| `minimal` | 2 | 0.5h | 1h | 3 min | Minimal for unit tests |
+
+```bash
+# List available presets
+python examples/rieth2017_dataset.py --list-presets
+
+# Use a preset with overrides
+python examples/rieth2017_dataset.py --preset quick --n-simulations 20
+```
+
+### Output Formats
+
+Data can be saved in multiple formats:
+
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| `npy` | `.npy` | NumPy binary format (default, fastest) |
+| `csv` | `.csv` | Comma-separated values with headers |
+| `hdf5` | `.h5` | HDF5 with gzip compression (requires h5py) |
+
+```bash
+# Single format
+python examples/rieth2017_dataset.py --preset quick --format csv
+
+# Multiple formats
+python examples/rieth2017_dataset.py --preset quick --format npy,csv,hdf5
+```
+
+### Parallel Generation
+
+Use multiple CPU cores to speed up dataset generation:
+
+```bash
+# Use 4 parallel workers
+python examples/rieth2017_dataset.py --preset quick --workers 4
+
+# Use all available CPU cores
+python examples/rieth2017_dataset.py --preset quick --workers -1
+```
+
+### Column Selection
+
+Select subsets of process variables to reduce dataset size:
+
+| Group | Variables | Count | Description |
+|-------|-----------|-------|-------------|
+| `all` | xmeas_1-41, xmv_1-11 | 52 | All variables (default) |
+| `xmeas` | xmeas_1-41 | 41 | Measured variables only |
+| `xmv` | xmv_1-11 | 11 | Manipulated variables only |
+| `key` | xmeas_7-9,11,12,15,20, xmv_1,10 | 9 | Key process variables |
+| `flows` | xmeas_1-6,10,14,17,19 | 10 | Flow measurements |
+| `temperatures` | xmeas_9,11,18,21,22 | 5 | Temperature measurements |
+| `pressures` | xmeas_7,13,16 | 3 | Pressure measurements |
+| `levels` | xmeas_8,12,15 | 3 | Level measurements |
+| `compositions` | xmeas_23-41 | 19 | Composition measurements |
+
+```bash
+# List available column groups
+python examples/rieth2017_dataset.py --list-columns
+
+# Use a column group
+python examples/rieth2017_dataset.py --preset quick --columns xmeas
+
+# Select specific columns
+python examples/rieth2017_dataset.py --preset quick --columns xmeas_1,xmeas_9,xmv_1
 ```
 
 ### Configurable Parameters
@@ -189,6 +274,9 @@ All simulation parameters can be customized via CLI or Python API:
 | `sampling_interval_min` | `--sampling-interval` | 3.0 | Sampling interval (minutes) |
 | `fault_onset_hours` | `--fault-onset` | 1.0 | Fault onset time for val/test (hours) |
 | `n_faults` | `--faults` | 20 | Number of fault types (or specific list) |
+| `output_formats` | `--format` | npy | Output format(s): npy, csv, hdf5 |
+| `n_workers` | `--workers` | 1 | Number of parallel workers (-1 for all CPUs) |
+| `columns` | `--columns` | all | Column subset or group name |
 
 **CLI example with custom parameters:**
 
@@ -199,7 +287,10 @@ python examples/rieth2017_dataset.py \
     --test-duration 20 \
     --sampling-interval 1 \
     --fault-onset 0.5 \
-    --faults 1,4,6
+    --faults 1,4,6 \
+    --format npy,csv \
+    --workers 4 \
+    --columns key
 ```
 
 ### Python API
@@ -211,7 +302,19 @@ from examples.rieth2017_dataset import Rieth2017DatasetGenerator
 generator = Rieth2017DatasetGenerator(output_dir="./data/rieth2017")
 generator.generate_all()
 
-# Custom parameters
+# Using presets
+generator = Rieth2017DatasetGenerator.from_preset("quick", output_dir="./data/quick")
+generator.generate_all()
+
+# Preset with overrides
+generator = Rieth2017DatasetGenerator.from_preset(
+    "quick",
+    output_dir="./data/custom",
+    n_simulations=20,
+    output_formats=["npy", "csv"],
+)
+
+# Custom parameters with all new features
 generator = Rieth2017DatasetGenerator(
     output_dir="./data/custom",
     n_simulations=100,
@@ -219,8 +322,15 @@ generator = Rieth2017DatasetGenerator(
     test_duration_hours=20.0,
     sampling_interval_min=1.0,
     fault_onset_hours=0.5,
+    output_formats=["npy", "csv"],  # Multiple formats
+    n_workers=4,                     # Parallel generation
+    columns="key",                   # Column subset
 )
 generator.generate_all(fault_numbers=[1, 4, 6])
+
+# List available presets and column groups
+print(Rieth2017DatasetGenerator.list_presets())
+print(Rieth2017DatasetGenerator.list_column_groups())
 
 # Or generate specific files
 generator.generate_fault_free_training(n_simulations=500)

@@ -80,6 +80,10 @@ Generates TEP datasets with configurable parameters. Defaults match Rieth et al.
 - Matching the original dataset structure (55 columns)
 - Configurable duration, sampling interval, and fault onset time
 - Non-overlapping random seeds for independent simulations
+- Named presets for common configurations
+- Multiple output formats (npy, csv, hdf5)
+- Parallel generation with multiprocessing
+- Column/variable selection
 
 **Run:**
 ```bash
@@ -88,6 +92,18 @@ python examples/rieth2017_dataset.py --small
 
 # Full dataset (500 simulations, takes several hours)
 python examples/rieth2017_dataset.py --full
+
+# Use a preset configuration
+python examples/rieth2017_dataset.py --preset quick
+
+# Parallel generation with 4 workers
+python examples/rieth2017_dataset.py --preset quick --workers 4
+
+# Output as CSV format
+python examples/rieth2017_dataset.py --preset quick --format csv
+
+# Select only key variables
+python examples/rieth2017_dataset.py --preset quick --columns key
 
 # Custom: 100 simulations for faults 1, 4, 6 only
 python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,4,6
@@ -98,9 +114,18 @@ python examples/rieth2017_dataset.py --n-simulations 50 \
     --sampling-interval 1 --fault-onset 0.5
 ```
 
+**Presets:**
+| Preset | Simulations | Train | Test | Description |
+|--------|-------------|-------|------|-------------|
+| `rieth2017` | 500 | 25h | 48h | Original paper specs (default) |
+| `quick` | 5 | 2h | 4h | Fast testing |
+| `high-res` | 500 | 25h | 48h | 1-minute sampling |
+| `minimal` | 2 | 0.5h | 1h | Unit tests |
+
 **Configurable parameters:**
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `--preset` | - | Use named preset (rieth2017, quick, high-res, minimal) |
 | `--n-simulations` | 500 | Simulations per fault type |
 | `--train-duration` | 25.0 | Training duration (hours) |
 | `--val-duration` | 48.0 | Validation duration (hours) |
@@ -108,7 +133,12 @@ python examples/rieth2017_dataset.py --n-simulations 50 \
 | `--sampling-interval` | 3.0 | Sampling interval (minutes) |
 | `--fault-onset` | 1.0 | Fault onset time for val/test (hours) |
 | `--faults` | 1-20 | Comma-separated fault numbers |
+| `--format` | npy | Output format(s): npy, csv, hdf5 |
+| `--workers` | 1 | Parallel workers (-1 for all CPUs) |
+| `--columns` | all | Column group or list (all, xmeas, xmv, key) |
 | `--no-validation` | - | Skip validation sets |
+| `--list-presets` | - | Show available presets |
+| `--list-columns` | - | Show available column groups |
 
 **Output files (6 files with validation):**
 - `fault_free_training.npy` - Normal operation training data

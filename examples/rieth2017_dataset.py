@@ -22,8 +22,10 @@ Citation:
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Literal, List, Dict, Any
+from typing import Optional, Literal, List, Dict, Any, Union, Callable
 import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 import numpy as np
 
@@ -47,6 +49,12 @@ try:
 except ImportError:
     HAS_PYREADR = False
 
+try:
+    import h5py
+    HAS_H5PY = True
+except ImportError:
+    HAS_H5PY = False
+
 
 # Dataset parameters matching Rieth et al. 2017
 RIETH_PARAMS = {
@@ -57,6 +65,76 @@ RIETH_PARAMS = {
     "sampling_interval_min": 3,     # 3-minute sampling interval
     "fault_onset_hours": 1.0,       # Fault introduced at 1 hour (val/test only)
     "n_faults": 20,                 # Number of fault types
+}
+
+# Preset configurations for common use cases
+PRESETS = {
+    "rieth2017": {
+        # Original Rieth et al. 2017 specifications
+        "n_simulations": 500,
+        "train_duration_hours": 25.0,
+        "val_duration_hours": 48.0,
+        "test_duration_hours": 48.0,
+        "sampling_interval_min": 3.0,
+        "fault_onset_hours": 1.0,
+        "n_faults": 20,
+    },
+    "quick": {
+        # Fast testing preset - minimal simulations
+        "n_simulations": 5,
+        "train_duration_hours": 2.0,
+        "val_duration_hours": 4.0,
+        "test_duration_hours": 4.0,
+        "sampling_interval_min": 3.0,
+        "fault_onset_hours": 0.5,
+        "n_faults": 20,
+    },
+    "high-res": {
+        # High resolution - 1-minute sampling
+        "n_simulations": 500,
+        "train_duration_hours": 25.0,
+        "val_duration_hours": 48.0,
+        "test_duration_hours": 48.0,
+        "sampling_interval_min": 1.0,
+        "fault_onset_hours": 1.0,
+        "n_faults": 20,
+    },
+    "minimal": {
+        # Minimal preset for unit tests
+        "n_simulations": 2,
+        "train_duration_hours": 0.5,
+        "val_duration_hours": 1.0,
+        "test_duration_hours": 1.0,
+        "sampling_interval_min": 3.0,
+        "fault_onset_hours": 0.25,
+        "n_faults": 20,
+    },
+}
+
+# Column definitions for variable selection
+XMEAS_COLUMNS = {
+    f"xmeas_{i}": i - 1 for i in range(1, 42)  # xmeas_1 to xmeas_41, indices 0-40
+}
+
+XMV_COLUMNS = {
+    f"xmv_{i}": 41 + i - 1 for i in range(1, 12)  # xmv_1 to xmv_11, indices 41-51
+}
+
+ALL_FEATURE_COLUMNS = {**XMEAS_COLUMNS, **XMV_COLUMNS}
+
+# Named column groups for convenience
+COLUMN_GROUPS = {
+    "all": list(ALL_FEATURE_COLUMNS.keys()),
+    "xmeas": list(XMEAS_COLUMNS.keys()),
+    "xmv": list(XMV_COLUMNS.keys()),
+    "flows": ["xmeas_1", "xmeas_2", "xmeas_3", "xmeas_4", "xmeas_5", "xmeas_6",
+              "xmeas_10", "xmeas_14", "xmeas_17", "xmeas_19"],
+    "temperatures": ["xmeas_9", "xmeas_11", "xmeas_18", "xmeas_21", "xmeas_22"],
+    "pressures": ["xmeas_7", "xmeas_13", "xmeas_16"],
+    "levels": ["xmeas_8", "xmeas_12", "xmeas_15"],
+    "compositions": [f"xmeas_{i}" for i in range(23, 42)],
+    "key": ["xmeas_7", "xmeas_8", "xmeas_9", "xmeas_11", "xmeas_12",
+            "xmeas_15", "xmeas_20", "xmv_1", "xmv_10"],
 }
 
 # Fault descriptions from the TEP
@@ -464,6 +542,54 @@ def compare_with_harvard(
     return all_results
 
 
+def _run_single_simulation(args: tuple) -> Optional[Dict]:
+    """
+    Run a single simulation (module-level function for multiprocessing).
+
+    Parameters
+    ----------
+    args : tuple
+        (seed, duration_hours, fault_number, fault_onset_hours, record_interval, sim_run)
+
+    Returns
+    -------
+    dict or None
+        Simulation result with 'sim_run' added, or None if failed
+    """
+    seed, duration_hours, fault_number, fault_onset_hours, record_interval, sim_run = args
+
+    if not HAS_TEP:
+        return None
+
+    try:
+        sim = TEPSimulator(random_seed=seed, control_mode=ControlMode.CLOSED_LOOP)
+        sim.initialize()
+
+        disturbances = None
+        if fault_number > 0:
+            disturbances = {fault_number: (fault_onset_hours, 1)}
+
+        result = sim.simulate(
+            duration_hours=duration_hours,
+            record_interval=record_interval,
+            disturbances=disturbances,
+        )
+
+        data = np.hstack([
+            result.measurements,
+            result.manipulated_vars[:, :11]
+        ])
+
+        return {
+            "sim_run": sim_run,
+            "data": data,
+            "shutdown": result.shutdown,
+        }
+
+    except Exception:
+        return None
+
+
 class Rieth2017DatasetGenerator:
     """
     Generate TEP dataset with configurable parameters.
@@ -492,6 +618,18 @@ class Rieth2017DatasetGenerator:
         Number of fault types to generate (default: 20, i.e., IDV 1-20).
     seed_offset : int
         Base seed offset for reproducibility.
+    output_formats : str or list of str
+        Output format(s): "npy", "csv", "hdf5", or a list like ["npy", "csv"].
+        Default: "npy".
+    n_workers : int
+        Number of parallel workers for simulation. Default: 1 (sequential).
+        Use -1 for all available CPUs.
+    columns : str or list of str
+        Columns to include in output. Can be:
+        - "all" (default): All 52 feature columns
+        - A group name: "xmeas", "xmv", "flows", "temperatures", "pressures",
+          "levels", "compositions", "key"
+        - A list of column names: ["xmeas_1", "xmeas_9", "xmv_1"]
 
     Examples
     --------
@@ -499,14 +637,18 @@ class Rieth2017DatasetGenerator:
     >>> generator = Rieth2017DatasetGenerator(output_dir="./data/rieth2017")
     >>> generator.generate_all()
 
-    >>> # Custom parameters: shorter simulations, faster sampling
+    >>> # Use a preset
+    >>> generator = Rieth2017DatasetGenerator.from_preset("quick")
+    >>> generator.generate_all()
+
+    >>> # Custom parameters with parallel generation and multiple formats
     >>> generator = Rieth2017DatasetGenerator(
     ...     output_dir="./data/custom",
     ...     n_simulations=100,
     ...     train_duration_hours=10.0,
-    ...     test_duration_hours=20.0,
-    ...     sampling_interval_min=1.0,
-    ...     fault_onset_hours=0.5,
+    ...     output_formats=["npy", "csv"],
+    ...     n_workers=4,
+    ...     columns="key",
     ... )
     >>> generator.generate_all()
     """
@@ -522,6 +664,9 @@ class Rieth2017DatasetGenerator:
         fault_onset_hours: float = 1.0,
         n_faults: int = 20,
         seed_offset: int = 1000000,
+        output_formats: Union[str, List[str]] = "npy",
+        n_workers: int = 1,
+        columns: Union[str, List[str]] = "all",
     ):
         if output_dir is None:
             output_dir = Path(__file__).parent.parent / "data" / "rieth2017"
@@ -543,6 +688,97 @@ class Rieth2017DatasetGenerator:
         # Calculate record interval from sampling interval
         # dt_hours = 1/3600 (1 second), so interval_min * 60 = steps
         self.record_interval = int(sampling_interval_min * 60)
+
+        # Output formats
+        if isinstance(output_formats, str):
+            output_formats = [output_formats]
+        self.output_formats = output_formats
+
+        # Parallel workers
+        if n_workers == -1:
+            n_workers = multiprocessing.cpu_count()
+        self.n_workers = max(1, n_workers)
+
+        # Column selection
+        self.columns = self._resolve_columns(columns)
+        self.column_indices = [ALL_FEATURE_COLUMNS[col] for col in self.columns]
+
+    @classmethod
+    def from_preset(
+        cls,
+        preset: str,
+        output_dir: Optional[str] = None,
+        **overrides,
+    ) -> "Rieth2017DatasetGenerator":
+        """
+        Create a generator from a named preset.
+
+        Parameters
+        ----------
+        preset : str
+            Preset name: "rieth2017", "quick", "high-res", or "minimal"
+        output_dir : str, optional
+            Override output directory
+        **overrides
+            Additional parameters to override preset values
+
+        Returns
+        -------
+        Rieth2017DatasetGenerator
+            Configured generator instance
+
+        Examples
+        --------
+        >>> # Quick testing preset
+        >>> gen = Rieth2017DatasetGenerator.from_preset("quick")
+
+        >>> # High-res with custom output
+        >>> gen = Rieth2017DatasetGenerator.from_preset(
+        ...     "high-res",
+        ...     output_dir="./data/highres",
+        ...     n_simulations=100,
+        ... )
+        """
+        if preset not in PRESETS:
+            available = ", ".join(PRESETS.keys())
+            raise ValueError(f"Unknown preset: {preset}. Available: {available}")
+
+        params = PRESETS[preset].copy()
+        params.update(overrides)
+
+        if output_dir is not None:
+            params["output_dir"] = output_dir
+
+        return cls(**params)
+
+    @staticmethod
+    def list_presets() -> Dict[str, Dict]:
+        """List available presets and their configurations."""
+        return PRESETS.copy()
+
+    @staticmethod
+    def list_column_groups() -> Dict[str, List[str]]:
+        """List available column groups."""
+        return COLUMN_GROUPS.copy()
+
+    def _resolve_columns(self, columns: Union[str, List[str]]) -> List[str]:
+        """Resolve column specification to a list of column names."""
+        if isinstance(columns, str):
+            if columns in COLUMN_GROUPS:
+                return COLUMN_GROUPS[columns]
+            elif columns in ALL_FEATURE_COLUMNS:
+                return [columns]
+            else:
+                raise ValueError(
+                    f"Unknown column or group: {columns}. "
+                    f"Available groups: {list(COLUMN_GROUPS.keys())}"
+                )
+        else:
+            # Validate all column names
+            for col in columns:
+                if col not in ALL_FEATURE_COLUMNS:
+                    raise ValueError(f"Unknown column: {col}")
+            return list(columns)
 
     def _get_seed(
         self,
@@ -610,6 +846,83 @@ class Rieth2017DatasetGenerator:
             print(f"  Warning: Simulation failed with seed {seed}: {e}")
             return None
 
+    def _run_simulations_batch(
+        self,
+        sim_args: List[tuple],
+        description: str = "Simulations",
+    ) -> List[Dict]:
+        """
+        Run multiple simulations, optionally in parallel.
+
+        Parameters
+        ----------
+        sim_args : list of tuple
+            List of (seed, duration, fault_number, fault_onset, record_interval, sim_run)
+        description : str
+            Description for progress messages
+
+        Returns
+        -------
+        list of dict
+            Results from successful simulations
+        """
+        results = []
+        n_total = len(sim_args)
+
+        if self.n_workers > 1:
+            # Parallel execution
+            print(f"  Using {self.n_workers} parallel workers...")
+            with ProcessPoolExecutor(max_workers=self.n_workers) as executor:
+                futures = {executor.submit(_run_single_simulation, args): args[-1]
+                          for args in sim_args}
+
+                completed = 0
+                for future in as_completed(futures):
+                    completed += 1
+                    if completed % 50 == 0 or completed == n_total:
+                        print(f"  {description}: {completed}/{n_total} complete...")
+
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+
+            # Sort by sim_run to maintain order
+            results.sort(key=lambda x: x["sim_run"])
+        else:
+            # Sequential execution
+            for args in sim_args:
+                sim_run = args[-1]
+                if sim_run % 50 == 0 or sim_run == 1:
+                    print(f"  {description} {sim_run}/{n_total}...")
+
+                result = _run_single_simulation(args)
+                if result is not None:
+                    results.append(result)
+
+        return results
+
+    def _build_data_array(
+        self,
+        results: List[Dict],
+        fault_number: int,
+    ) -> np.ndarray:
+        """Build the output array from simulation results."""
+        all_data = []
+        for result in results:
+            sim_run = result["sim_run"]
+            data = result["data"]
+            n_samples = data.shape[0]
+
+            for sample_idx in range(n_samples):
+                row = np.zeros(55)
+                row[0] = fault_number
+                row[1] = sim_run
+                row[2] = sample_idx + 1
+                row[3:] = data[sample_idx]
+                all_data.append(row)
+
+        return np.array(all_data) if all_data else np.zeros((0, 55))
+
     def generate_fault_free_training(
         self,
         n_simulations: Optional[int] = None,
@@ -638,31 +951,15 @@ class Rieth2017DatasetGenerator:
         print(f"  Duration: {duration} hours")
         print(f"  Sampling: {self.sampling_interval_min} minutes")
 
-        all_data = []
+        # Build simulation arguments
+        sim_args = [
+            (self._get_seed(sim_run, split="train", fault_number=0),
+             duration, 0, 0.0, self.record_interval, sim_run)
+            for sim_run in range(1, n_sims + 1)
+        ]
 
-        for sim_run in range(1, n_sims + 1):
-            seed = self._get_seed(sim_run, split="train", fault_number=0)
-
-            if sim_run % 50 == 0 or sim_run == 1:
-                print(f"  Simulation {sim_run}/{n_sims}...")
-
-            result = self._run_simulation(seed, duration, fault_number=0)
-
-            if result is None:
-                continue
-
-            n_samples = result["data"].shape[0]
-
-            # Build full row: [faultNumber, simulationRun, sample, features...]
-            for sample_idx in range(n_samples):
-                row = np.zeros(55)
-                row[0] = 0                          # faultNumber
-                row[1] = sim_run                    # simulationRun
-                row[2] = sample_idx + 1             # sample (1-indexed)
-                row[3:] = result["data"][sample_idx]  # xmeas + xmv
-                all_data.append(row)
-
-        data_array = np.array(all_data)
+        results = self._run_simulations_batch(sim_args, "Simulation")
+        data_array = self._build_data_array(results, fault_number=0)
         print(f"  Generated {len(data_array)} rows")
 
         if save:
@@ -697,30 +994,14 @@ class Rieth2017DatasetGenerator:
         print(f"  Duration: {duration} hours")
         print(f"  Sampling: {self.sampling_interval_min} minutes")
 
-        all_data = []
+        sim_args = [
+            (self._get_seed(sim_run, split="test", fault_number=0),
+             duration, 0, 0.0, self.record_interval, sim_run)
+            for sim_run in range(1, n_sims + 1)
+        ]
 
-        for sim_run in range(1, n_sims + 1):
-            seed = self._get_seed(sim_run, split="test", fault_number=0)
-
-            if sim_run % 50 == 0 or sim_run == 1:
-                print(f"  Simulation {sim_run}/{n_sims}...")
-
-            result = self._run_simulation(seed, duration, fault_number=0)
-
-            if result is None:
-                continue
-
-            n_samples = result["data"].shape[0]
-
-            for sample_idx in range(n_samples):
-                row = np.zeros(55)
-                row[0] = 0
-                row[1] = sim_run
-                row[2] = sample_idx + 1
-                row[3:] = result["data"][sample_idx]
-                all_data.append(row)
-
-        data_array = np.array(all_data)
+        results = self._run_simulations_batch(sim_args, "Simulation")
+        data_array = self._build_data_array(results, fault_number=0)
         print(f"  Generated {len(data_array)} rows")
 
         if save:
@@ -755,30 +1036,14 @@ class Rieth2017DatasetGenerator:
         print(f"  Duration: {duration} hours")
         print(f"  Sampling: {self.sampling_interval_min} minutes")
 
-        all_data = []
+        sim_args = [
+            (self._get_seed(sim_run, split="val", fault_number=0),
+             duration, 0, 0.0, self.record_interval, sim_run)
+            for sim_run in range(1, n_sims + 1)
+        ]
 
-        for sim_run in range(1, n_sims + 1):
-            seed = self._get_seed(sim_run, split="val", fault_number=0)
-
-            if sim_run % 50 == 0 or sim_run == 1:
-                print(f"  Simulation {sim_run}/{n_sims}...")
-
-            result = self._run_simulation(seed, duration, fault_number=0)
-
-            if result is None:
-                continue
-
-            n_samples = result["data"].shape[0]
-
-            for sample_idx in range(n_samples):
-                row = np.zeros(55)
-                row[0] = 0
-                row[1] = sim_run
-                row[2] = sample_idx + 1
-                row[3:] = result["data"][sample_idx]
-                all_data.append(row)
-
-        data_array = np.array(all_data)
+        results = self._run_simulations_batch(sim_args, "Simulation")
+        data_array = self._build_data_array(results, fault_number=0)
         print(f"  Generated {len(data_array)} rows")
 
         if save:
@@ -822,44 +1087,28 @@ class Rieth2017DatasetGenerator:
         print(f"  Sampling: {self.sampling_interval_min} minutes")
         print(f"  Fault onset: t=0 (training)")
 
-        all_data = []
+        all_arrays = []
 
         for fault_num in fault_nums:
             print(f"\nFault {fault_num}: {FAULT_DESCRIPTIONS.get(fault_num, 'Unknown')}")
 
-            shutdown_count = 0
+            sim_args = [
+                (self._get_seed(sim_run, split="train", fault_number=fault_num),
+                 duration, fault_num, 0.0, self.record_interval, sim_run)
+                for sim_run in range(1, n_sims + 1)
+            ]
 
-            for sim_run in range(1, n_sims + 1):
-                seed = self._get_seed(sim_run, split="train", fault_number=fault_num)
-
-                if sim_run % 100 == 0 or sim_run == 1:
-                    print(f"  Simulation {sim_run}/{n_sims}...")
-
-                # In training, fault is active from t=0
-                result = self._run_simulation(
-                    seed, duration, fault_number=fault_num, fault_onset_hours=0.0
-                )
-
-                if result is None:
-                    continue
-
-                if result["shutdown"]:
-                    shutdown_count += 1
-
-                n_samples = result["data"].shape[0]
-
-                for sample_idx in range(n_samples):
-                    row = np.zeros(55)
-                    row[0] = fault_num
-                    row[1] = sim_run
-                    row[2] = sample_idx + 1
-                    row[3:] = result["data"][sample_idx]
-                    all_data.append(row)
+            results = self._run_simulations_batch(sim_args, "Simulation")
+            shutdown_count = sum(1 for r in results if r.get("shutdown", False))
 
             if shutdown_count > 0:
                 print(f"  Shutdowns: {shutdown_count}/{n_sims}")
 
-        data_array = np.array(all_data)
+            fault_data = self._build_data_array(results, fault_number=fault_num)
+            if len(fault_data) > 0:
+                all_arrays.append(fault_data)
+
+        data_array = np.vstack(all_arrays) if all_arrays else np.zeros((0, 55))
         print(f"\nTotal rows generated: {len(data_array)}")
 
         if save:
@@ -904,43 +1153,28 @@ class Rieth2017DatasetGenerator:
         print(f"  Sampling: {self.sampling_interval_min} minutes")
         print(f"  Fault onset: {fault_onset} hour")
 
-        all_data = []
+        all_arrays = []
 
         for fault_num in fault_nums:
             print(f"\nFault {fault_num}: {FAULT_DESCRIPTIONS.get(fault_num, 'Unknown')}")
 
-            shutdown_count = 0
+            sim_args = [
+                (self._get_seed(sim_run, split="test", fault_number=fault_num),
+                 duration, fault_num, fault_onset, self.record_interval, sim_run)
+                for sim_run in range(1, n_sims + 1)
+            ]
 
-            for sim_run in range(1, n_sims + 1):
-                seed = self._get_seed(sim_run, split="test", fault_number=fault_num)
-
-                if sim_run % 100 == 0 or sim_run == 1:
-                    print(f"  Simulation {sim_run}/{n_sims}...")
-
-                result = self._run_simulation(
-                    seed, duration, fault_number=fault_num, fault_onset_hours=fault_onset
-                )
-
-                if result is None:
-                    continue
-
-                if result["shutdown"]:
-                    shutdown_count += 1
-
-                n_samples = result["data"].shape[0]
-
-                for sample_idx in range(n_samples):
-                    row = np.zeros(55)
-                    row[0] = fault_num
-                    row[1] = sim_run
-                    row[2] = sample_idx + 1
-                    row[3:] = result["data"][sample_idx]
-                    all_data.append(row)
+            results = self._run_simulations_batch(sim_args, "Simulation")
+            shutdown_count = sum(1 for r in results if r.get("shutdown", False))
 
             if shutdown_count > 0:
                 print(f"  Shutdowns: {shutdown_count}/{n_sims}")
 
-        data_array = np.array(all_data)
+            fault_data = self._build_data_array(results, fault_number=fault_num)
+            if len(fault_data) > 0:
+                all_arrays.append(fault_data)
+
+        data_array = np.vstack(all_arrays) if all_arrays else np.zeros((0, 55))
         print(f"\nTotal rows generated: {len(data_array)}")
 
         if save:
@@ -985,43 +1219,28 @@ class Rieth2017DatasetGenerator:
         print(f"  Sampling: {self.sampling_interval_min} minutes")
         print(f"  Fault onset: {fault_onset} hour")
 
-        all_data = []
+        all_arrays = []
 
         for fault_num in fault_nums:
             print(f"\nFault {fault_num}: {FAULT_DESCRIPTIONS.get(fault_num, 'Unknown')}")
 
-            shutdown_count = 0
+            sim_args = [
+                (self._get_seed(sim_run, split="val", fault_number=fault_num),
+                 duration, fault_num, fault_onset, self.record_interval, sim_run)
+                for sim_run in range(1, n_sims + 1)
+            ]
 
-            for sim_run in range(1, n_sims + 1):
-                seed = self._get_seed(sim_run, split="val", fault_number=fault_num)
-
-                if sim_run % 100 == 0 or sim_run == 1:
-                    print(f"  Simulation {sim_run}/{n_sims}...")
-
-                result = self._run_simulation(
-                    seed, duration, fault_number=fault_num, fault_onset_hours=fault_onset
-                )
-
-                if result is None:
-                    continue
-
-                if result["shutdown"]:
-                    shutdown_count += 1
-
-                n_samples = result["data"].shape[0]
-
-                for sample_idx in range(n_samples):
-                    row = np.zeros(55)
-                    row[0] = fault_num
-                    row[1] = sim_run
-                    row[2] = sample_idx + 1
-                    row[3:] = result["data"][sample_idx]
-                    all_data.append(row)
+            results = self._run_simulations_batch(sim_args, "Simulation")
+            shutdown_count = sum(1 for r in results if r.get("shutdown", False))
 
             if shutdown_count > 0:
                 print(f"  Shutdowns: {shutdown_count}/{n_sims}")
 
-        data_array = np.array(all_data)
+            fault_data = self._build_data_array(results, fault_number=fault_num)
+            if len(fault_data) > 0:
+                all_arrays.append(fault_data)
+
+        data_array = np.vstack(all_arrays) if all_arrays else np.zeros((0, 55))
         print(f"\nTotal rows generated: {len(data_array)}")
 
         if save:
@@ -1029,13 +1248,71 @@ class Rieth2017DatasetGenerator:
 
         return data_array
 
-    def _save_data(self, data: np.ndarray, filename: str) -> Path:
-        """Save data to output directory."""
+    def _save_data(self, data: np.ndarray, filename: str) -> List[Path]:
+        """
+        Save data to output directory in all configured formats.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Data array to save
+        filename : str
+            Base filename (with .npy extension, will be replaced for other formats)
+
+        Returns
+        -------
+        list of Path
+            Paths to all saved files
+        """
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        filepath = self.output_dir / filename
-        np.save(filepath, data)
-        print(f"  Saved: {filepath}")
-        return filepath
+
+        # Apply column selection if not using all columns
+        if len(self.columns) < 52:
+            # Columns 0-2 are metadata (faultNumber, simulationRun, sample)
+            # Columns 3+ are features
+            selected_indices = [0, 1, 2] + [3 + idx for idx in self.column_indices]
+            data = data[:, selected_indices]
+
+        base_name = filename.rsplit(".", 1)[0]
+        saved_paths = []
+
+        for fmt in self.output_formats:
+            if fmt == "npy":
+                filepath = self.output_dir / f"{base_name}.npy"
+                np.save(filepath, data)
+                saved_paths.append(filepath)
+                print(f"  Saved: {filepath}")
+
+            elif fmt == "csv":
+                filepath = self.output_dir / f"{base_name}.csv"
+                # Build header
+                header = ["faultNumber", "simulationRun", "sample"] + self.columns
+                np.savetxt(
+                    filepath,
+                    data,
+                    delimiter=",",
+                    header=",".join(header),
+                    comments="",
+                    fmt=["%.0f", "%.0f", "%.0f"] + ["%.6f"] * len(self.columns),
+                )
+                saved_paths.append(filepath)
+                print(f"  Saved: {filepath}")
+
+            elif fmt == "hdf5":
+                if not HAS_H5PY:
+                    print(f"  Warning: h5py not installed, skipping HDF5 format")
+                    continue
+                filepath = self.output_dir / f"{base_name}.h5"
+                with h5py.File(filepath, "w") as f:
+                    f.create_dataset("data", data=data, compression="gzip")
+                    f.attrs["columns"] = ["faultNumber", "simulationRun", "sample"] + self.columns
+                saved_paths.append(filepath)
+                print(f"  Saved: {filepath}")
+
+            else:
+                print(f"  Warning: Unknown format '{fmt}', skipping")
+
+        return saved_paths
 
     def generate_all(
         self,
@@ -1116,6 +1393,24 @@ class Rieth2017DatasetGenerator:
             files["fault_free_validation.npy"] = f"Normal operation validation data ({self.val_duration_hours}h)"
             files["faulty_validation.npy"] = f"Faulty validation data ({self.val_duration_hours}h, fault at t={self.fault_onset_hours}h)"
 
+        # Build column info based on selection
+        if len(self.columns) == 52:
+            column_info = {
+                "0": "faultNumber",
+                "1": "simulationRun",
+                "2": "sample",
+                "3-43": "xmeas_1 to xmeas_41 (41 measured variables)",
+                "44-54": "xmv_1 to xmv_11 (11 manipulated variables)",
+            }
+        else:
+            column_info = {
+                "0": "faultNumber",
+                "1": "simulationRun",
+                "2": "sample",
+            }
+            for i, col in enumerate(self.columns):
+                column_info[str(i + 3)] = col
+
         metadata = {
             "description": "TEP dataset generated with configurable parameters",
             "reference": {
@@ -1134,14 +1429,11 @@ class Rieth2017DatasetGenerator:
                 "fault_onset_hours": self.fault_onset_hours,
                 "fault_numbers": fault_numbers or list(range(1, self.n_faults + 1)),
                 "include_validation": include_validation,
+                "output_formats": self.output_formats,
+                "n_workers": self.n_workers,
+                "columns": self.columns,
             },
-            "columns": {
-                "0": "faultNumber",
-                "1": "simulationRun",
-                "2": "sample",
-                "3-43": "xmeas_1 to xmeas_41 (41 measured variables)",
-                "44-54": "xmv_1 to xmv_11 (11 manipulated variables)",
-            },
+            "columns": column_info,
             "files": files,
         }
 
@@ -1437,8 +1729,64 @@ def main():
         default=None,
         help="Fault onset time in hours for val/test sets (default: 1.0)",
     )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        choices=["rieth2017", "quick", "high-res", "minimal"],
+        help="Use a named preset configuration",
+    )
+    parser.add_argument(
+        "--format",
+        type=str,
+        default=None,
+        help="Output format(s): npy, csv, hdf5, or comma-separated (e.g., 'npy,csv')",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers (-1 for all CPUs, default: 1)",
+    )
+    parser.add_argument(
+        "--columns",
+        type=str,
+        default=None,
+        help="Columns to include: 'all', group name (xmeas, xmv, key, etc.), or comma-separated column names",
+    )
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        help="List available presets and exit",
+    )
+    parser.add_argument(
+        "--list-columns",
+        action="store_true",
+        help="List available column groups and exit",
+    )
 
     args = parser.parse_args()
+
+    # Handle info commands first
+    if args.list_presets:
+        print("Available presets:")
+        print("=" * 60)
+        for name, params in PRESETS.items():
+            print(f"\n{name}:")
+            for key, val in params.items():
+                print(f"  {key}: {val}")
+        return
+
+    if args.list_columns:
+        print("Available column groups:")
+        print("=" * 60)
+        for name, cols in COLUMN_GROUPS.items():
+            print(f"\n{name} ({len(cols)} columns):")
+            if len(cols) <= 10:
+                print(f"  {', '.join(cols)}")
+            else:
+                print(f"  {', '.join(cols[:5])}, ..., {', '.join(cols[-3:])}")
+        return
 
     if args.compare:
         example_compare_with_harvard(local_dir=args.output_dir)
@@ -1450,9 +1798,34 @@ def main():
         example_generate_full()
     elif args.small:
         example_generate_small()
+    elif args.preset:
+        # Use preset
+        overrides = {}
+        if args.output_dir:
+            overrides["output_dir"] = args.output_dir
+        if args.n_simulations:
+            overrides["n_simulations"] = args.n_simulations
+        if args.format:
+            overrides["output_formats"] = [f.strip() for f in args.format.split(",")]
+        if args.workers != 1:
+            overrides["n_workers"] = args.workers
+        if args.columns:
+            overrides["columns"] = args.columns
+
+        generator = Rieth2017DatasetGenerator.from_preset(args.preset, **overrides)
+
+        fault_numbers = None
+        if args.faults:
+            fault_numbers = [int(f.strip()) for f in args.faults.split(",")]
+
+        generator.generate_all(
+            fault_numbers=fault_numbers,
+            include_validation=not args.no_validation,
+        )
     elif (args.n_simulations or args.faults or args.output_dir or args.no_validation
           or args.train_duration or args.val_duration or args.test_duration
-          or args.sampling_interval or args.fault_onset):
+          or args.sampling_interval or args.fault_onset or args.format
+          or args.workers != 1 or args.columns):
         # Custom generation with configurable parameters
         generator_kwargs = {"output_dir": args.output_dir}
 
@@ -1468,6 +1841,12 @@ def main():
             generator_kwargs["sampling_interval_min"] = args.sampling_interval
         if args.fault_onset:
             generator_kwargs["fault_onset_hours"] = args.fault_onset
+        if args.format:
+            generator_kwargs["output_formats"] = [f.strip() for f in args.format.split(",")]
+        if args.workers != 1:
+            generator_kwargs["n_workers"] = args.workers
+        if args.columns:
+            generator_kwargs["columns"] = args.columns
 
         generator = Rieth2017DatasetGenerator(**generator_kwargs)
 
@@ -1488,49 +1867,44 @@ def main():
         print("Generate TEP datasets with configurable parameters.")
         print("Defaults match Rieth et al. (2017) specifications.")
         print()
-        print("Default parameters:")
-        print("  - 500 simulations per fault type")
-        print("  - Training: 25h, Testing/Validation: 48h")
-        print("  - 3-minute sampling interval")
-        print("  - Fault onset at t=1h (val/test), t=0 (training)")
-        print()
-        print("Output files (6 total with validation):")
-        print("  - fault_free_training.npy")
-        print("  - fault_free_validation.npy")
-        print("  - fault_free_testing.npy")
-        print("  - faulty_training.npy")
-        print("  - faulty_validation.npy")
-        print("  - faulty_testing.npy")
-        print()
-        print("Generate data:")
+        print("Quick start:")
         print("  python rieth2017_dataset.py --small    # Quick test (5 sims)")
         print("  python rieth2017_dataset.py --full     # Full dataset (500 sims)")
+        print("  python rieth2017_dataset.py --preset quick  # Use 'quick' preset")
+        print()
+        print("Available presets: rieth2017, quick, high-res, minimal")
+        print("  --list-presets           # Show all preset configurations")
         print()
         print("Custom generation:")
-        print("  python rieth2017_dataset.py --n-simulations 100 --faults 1,2,4,6")
-        print("  python rieth2017_dataset.py --no-validation  # Skip validation sets")
+        print("  --n-simulations 100      # Number of simulations per fault")
+        print("  --faults 1,4,6           # Specific fault numbers")
+        print("  --no-validation          # Skip validation sets")
         print()
-        print("Custom timing parameters:")
+        print("Timing parameters:")
         print("  --train-duration 10      # Training duration (hours)")
         print("  --val-duration 20        # Validation duration (hours)")
         print("  --test-duration 20       # Testing duration (hours)")
         print("  --sampling-interval 1    # Sampling interval (minutes)")
         print("  --fault-onset 0.5        # Fault onset time (hours)")
         print()
-        print("Example with custom parameters:")
-        print("  python rieth2017_dataset.py --n-simulations 50 \\")
-        print("      --train-duration 10 --test-duration 20 \\")
-        print("      --sampling-interval 1 --fault-onset 0.5")
+        print("Output options:")
+        print("  --format npy,csv         # Output formats (npy, csv, hdf5)")
+        print("  --columns key            # Column subset (xmeas, xmv, key, etc.)")
+        print("  --list-columns           # Show available column groups")
+        print()
+        print("Performance:")
+        print("  --workers 4              # Parallel workers (-1 for all CPUs)")
+        print()
+        print("Example with multiple options:")
+        print("  python rieth2017_dataset.py --preset quick --format npy,csv \\")
+        print("      --columns key --workers 4")
         print()
         print("Compare with original:")
-        print("  python rieth2017_dataset.py --download-harvard  # Download original")
-        print("  python rieth2017_dataset.py --compare           # Compare datasets")
+        print("  python rieth2017_dataset.py --download-harvard")
+        print("  python rieth2017_dataset.py --compare")
         print()
-        print("Analyze:")
-        print("  python rieth2017_dataset.py --analyze  # Analyze existing data")
-        print()
-        print("Requirements for comparison:")
-        print("  pip install requests pyreadr")
+        print("Requirements for HDF5 and comparison:")
+        print("  pip install h5py requests pyreadr")
 
 
 if __name__ == "__main__":
