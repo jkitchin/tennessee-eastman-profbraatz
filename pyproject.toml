@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tep"
-version = "1.0.0"
+version = "1.1.0"
 description = "Pure Python implementation of the Tennessee Eastman Process simulator"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -29,9 +29,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gui = [
+    "matplotlib>=3.5.0",
+]
 dev = [
     "pytest>=7.0.0",
+    "matplotlib>=3.5.0",
 ]
+
+[project.scripts]
+tep-dashboard = "tep.dashboard:main"
 
 [tool.setuptools.packages.find]
 include = ["tep*"]

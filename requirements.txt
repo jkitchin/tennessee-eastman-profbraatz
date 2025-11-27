@@ -1,2 +1,5 @@
 numpy>=1.20.0
 pytest>=7.0.0
+
+# For GUI dashboard (optional)
+matplotlib>=3.5.0

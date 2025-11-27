@@ -26,7 +26,7 @@ from .constants import (
     COMPONENT_NAMES, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES, DISTURBANCE_NAMES
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Python translation of Downs & Vogel (1993)"
 
 __all__ = [
@@ -43,3 +43,10 @@ __all__ = [
     "MANIPULATED_VAR_NAMES",
     "DISTURBANCE_NAMES",
 ]
+
+
+def run_dashboard():
+    """Launch the interactive GUI dashboard."""
+    from .dashboard import TEPDashboard
+    app = TEPDashboard()
+    app.run()
