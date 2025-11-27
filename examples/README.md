@@ -71,6 +71,37 @@ python examples/data_generation.py
 - `fault{N}_data.npy` - Fault scenario data
 - `normal_data_sample.csv` - CSV sample for inspection
 
+### rieth2017_dataset.py
+
+Generates TEP datasets matching the Rieth et al. (2017) specifications for anomaly detection research.
+
+**Topics covered:**
+- Generating datasets with 500 simulations per fault type
+- Matching the original dataset structure (55 columns)
+- Training vs testing data (25h vs 48h)
+- Non-overlapping random seeds for independent simulations
+
+**Run:**
+```bash
+# Quick test with 5 simulations
+python examples/rieth2017_dataset.py --small
+
+# Full dataset (500 simulations, takes several hours)
+python examples/rieth2017_dataset.py --full
+
+# Custom: 100 simulations for faults 1, 4, 6 only
+python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,4,6
+```
+
+**Output files:**
+- `fault_free_training.npy` - Normal operation training data
+- `fault_free_testing.npy` - Normal operation testing data
+- `faulty_training.npy` - Faulty training data
+- `faulty_testing.npy` - Faulty testing data
+- `metadata.json` - Dataset metadata
+
+**Reference:** Rieth, C.A., et al. (2017). "Issues and Advances in Anomaly Detection Evaluation for Joint Human-Automated Systems." AHFE 2017.
+
 ## Quick Start
 
 ```bash
