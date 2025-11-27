@@ -453,7 +453,9 @@ def create_empty_figure():
         horizontal_spacing=0.08
     )
 
-    colors = ['#3498db', '#e74c3c', '#2ecc71']
+    # Use distinct colors and line styles for better differentiation
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2']
+    dashes = ['solid', 'dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
 
     for idx, (title, signals) in enumerate(PLOT_CONFIGS):
         row = idx // 2 + 1
@@ -462,7 +464,9 @@ def create_empty_figure():
         for color_idx, (label, _) in enumerate(signals):
             fig.add_trace(
                 go.Scatter(x=[], y=[], name=label, mode='lines',
-                          line=dict(color=colors[color_idx], width=2),
+                          line=dict(color=colors[color_idx % len(colors)],
+                                   width=2,
+                                   dash=dashes[color_idx % len(dashes)]),
                           showlegend=True, legendgroup=f'group{idx}'),
                 row=row, col=col
             )
