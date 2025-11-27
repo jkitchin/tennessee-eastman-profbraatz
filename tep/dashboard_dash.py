@@ -159,9 +159,16 @@ def create_layout():
         # Header
         html.Div([
             html.H1("Tennessee Eastman Process Simulator",
-                   style={'textAlign': 'center', 'color': '#2c3e50', 'marginBottom': '10px'}),
+                   style={'textAlign': 'center', 'color': '#2c3e50', 'marginBottom': '5px'}),
             html.P("Interactive Process Control Dashboard",
-                  style={'textAlign': 'center', 'color': '#7f8c8d', 'marginTop': '0'})
+                  style={'textAlign': 'center', 'color': '#7f8c8d', 'marginTop': '0', 'marginBottom': '5px'}),
+            html.P([
+                "By John Kitchin | ",
+                html.A("GitHub Repository",
+                      href="https://github.com/jkitchin/tennessee-eastman-profbraatz",
+                      target="_blank",
+                      style={'color': '#3498db', 'textDecoration': 'none'})
+            ], style={'textAlign': 'center', 'color': '#95a5a6', 'marginTop': '0', 'fontSize': '12px'})
         ], style={'backgroundColor': '#ecf0f1', 'padding': '10px', 'marginBottom': '10px'}),
 
         # Shutdown Alert - initially hidden
