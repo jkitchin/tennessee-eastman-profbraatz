@@ -2,6 +2,7 @@
 py.install_sources(
   [
     '__init__.py',
+    'cli.py',
     'constants.py',
     'controllers.py',
     'dashboard.py',
