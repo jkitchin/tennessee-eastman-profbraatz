@@ -38,6 +38,7 @@ jobs:
 
     - name: Debug - Check installed files
       run: |
+        cd /tmp
         echo "=== Site packages tep directory ==="
         python -c "import tep; import os; print(os.path.dirname(tep.__file__))"
         ls -la $(python -c "import tep; import os; print(os.path.dirname(tep.__file__))")
@@ -48,4 +49,4 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest tests/ -v --tb=short
+        cd /tmp && pytest $GITHUB_WORKSPACE/tests/ -v --tb=short
