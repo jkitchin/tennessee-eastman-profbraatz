@@ -39,8 +39,11 @@ sim_data = {
     'time': [],
     'measurements': {i: [] for i in range(NUM_MEASUREMENTS)},
     'mvs': {i: [] for i in range(NUM_MANIPULATED_VARS)},
+    'idv': [],  # Track active disturbances at each time point (list of active IDV numbers)
     'running': False,
-    'history_length': 500,
+    'max_display_points': 2000,  # Max points to display (decimated from full data)
+    'output_interval': 180,  # Seconds between data recordings (default: 3 min like Fortran)
+    'last_output_time': 0,  # Last time data was recorded (in seconds)
 }
 
 # MV short names
@@ -105,8 +108,10 @@ def init_simulator():
     sim_data['time'] = []
     sim_data['measurements'] = {i: [] for i in range(NUM_MEASUREMENTS)}
     sim_data['mvs'] = {i: [] for i in range(NUM_MANIPULATED_VARS)}
+    sim_data['idv'] = []
     sim_data['running'] = False
     sim_data['shutdown_reason'] = None
+    sim_data['last_output_time'] = 0
 
 
 def get_shutdown_reason(meas):
@@ -212,14 +217,26 @@ def create_layout():
                     ),
 
                     # Speed control
-                    html.Label("Simulation Speed:"),
+                    html.Label("Simulation Speed (steps/update):"),
                     dcc.Slider(
                         id='speed-slider',
                         min=1,
                         max=50,
-                        value=10,
+                        value=50,
                         marks={1: '1', 10: '10', 25: '25', 50: '50'},
                         step=1
+                    ),
+
+                    # Output interval control
+                    html.Label("Data Output Interval (sec):"),
+                    dcc.Slider(
+                        id='output-interval-slider',
+                        min=1,
+                        max=300,
+                        value=180,
+                        marks={1: '1s', 60: '1m', 180: '3m', 300: '5m'},
+                        step=1,
+                        tooltip={'placement': 'bottom', 'always_visible': False}
                     ),
 
                     # Buttons
@@ -233,7 +250,16 @@ def create_layout():
                         html.Button('Reset', id='reset-btn', n_clicks=0,
                                    style={'backgroundColor': '#3498db', 'color': 'white',
                                          'border': 'none', 'padding': '10px 20px', 'cursor': 'pointer'}),
-                    ], style={'marginTop': '15px', 'marginBottom': '15px'}),
+                    ], style={'marginTop': '15px', 'marginBottom': '10px'}),
+
+                    # Download button
+                    html.Div([
+                        html.Button('Download Data (CSV)', id='download-btn', n_clicks=0,
+                                   style={'backgroundColor': '#9b59b6', 'color': 'white',
+                                         'border': 'none', 'padding': '8px 15px', 'cursor': 'pointer',
+                                         'width': '100%', 'fontSize': '12px'}),
+                        dcc.Download(id='download-data'),
+                    ], style={'marginBottom': '15px'}),
 
                     # Status
                     html.Div([
@@ -273,7 +299,7 @@ def create_layout():
 
             # Center - Plots
             html.Div([
-                dcc.Graph(id='main-plots', style={'height': '800px'})
+                dcc.Graph(id='main-plots', style={'height': '850px'})
             ], style={'flexGrow': '1', 'backgroundColor': '#fff', 'borderRadius': '5px',
                      'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'padding': '10px'}),
 
@@ -314,9 +340,36 @@ def create_layout():
         dcc.Interval(id='interval-component', interval=100, n_intervals=0, disabled=True),
 
         # Store for simulation state
-        dcc.Store(id='sim-state', data={'running': False, 'speed': 10})
+        dcc.Store(id='sim-state', data={'running': False, 'speed': 50, 'output_interval': 180})
     ], style={'fontFamily': 'Arial, sans-serif', 'backgroundColor': '#ecf0f1',
               'minHeight': '100vh', 'paddingBottom': '20px'})
+
+
+def decimate_data(data, max_points):
+    """Decimate data to at most max_points while preserving shape.
+
+    Uses simple striding to reduce data size for display.
+    Always includes first and last points.
+    """
+    if not data or len(data) <= max_points:
+        return data
+
+    n = len(data)
+    step = max(1, n // max_points)
+
+    # Use numpy for efficient slicing if data is large
+    if isinstance(data, np.ndarray):
+        indices = np.arange(0, n, step)
+        # Always include last point
+        if indices[-1] != n - 1:
+            indices = np.append(indices, n - 1)
+        return data[indices].tolist()
+    else:
+        # List version
+        result = data[::step]
+        if len(data) > 1 and (len(data) - 1) % step != 0:
+            result = list(result) + [data[-1]]
+        return result
 
 
 def create_empty_figure():
@@ -367,14 +420,17 @@ app.layout = create_layout()
     Output('status-text', 'children'),
     Output('status-text', 'style'),
     Output('shutdown-alert', 'style', allow_duplicate=True),
+    Output('main-plots', 'figure', allow_duplicate=True),
+    Output('time-text', 'children', allow_duplicate=True),
     Input('start-btn', 'n_clicks'),
     Input('stop-btn', 'n_clicks'),
     Input('reset-btn', 'n_clicks'),
     State('sim-state', 'data'),
     State('speed-slider', 'value'),
+    State('output-interval-slider', 'value'),
     prevent_initial_call=True
 )
-def control_simulation(start_clicks, stop_clicks, reset_clicks, state, speed):
+def control_simulation(start_clicks, stop_clicks, reset_clicks, state, speed, output_interval):
     """Handle start/stop/reset button clicks."""
     global sim_data
 
@@ -382,24 +438,29 @@ def control_simulation(start_clicks, stop_clicks, reset_clicks, state, speed):
 
     # Hidden style for shutdown alert
     hidden_style = {'display': 'none'}
+    from dash import no_update
 
     if triggered == 'start-btn':
         sim_data['running'] = True
+        sim_data['output_interval'] = output_interval
         state['running'] = True
         state['speed'] = speed
-        return False, state, "Running", {'color': '#27ae60', 'fontWeight': 'bold'}, hidden_style
+        state['output_interval'] = output_interval
+        return False, state, "Running", {'color': '#27ae60', 'fontWeight': 'bold'}, hidden_style, no_update, no_update
 
     elif triggered == 'stop-btn':
         sim_data['running'] = False
         state['running'] = False
-        return True, state, "Stopped", {'color': '#e74c3c'}, hidden_style
+        return True, state, "Stopped", {'color': '#e74c3c'}, hidden_style, no_update, no_update
 
     elif triggered == 'reset-btn':
         init_simulator()
         state['running'] = False
-        return True, state, "Ready", {'color': '#27ae60'}, hidden_style
+        # Create empty figure to clear plots
+        empty_fig = create_figure_with_data()
+        return True, state, "Ready", {'color': '#27ae60'}, hidden_style, empty_fig, "0.00 hr (0.0 min)"
 
-    return True, state, "Ready", {'color': '#27ae60'}, hidden_style
+    return True, state, "Ready", {'color': '#27ae60'}, hidden_style, no_update, no_update
 
 
 @callback(
@@ -477,8 +538,9 @@ def update_simulation(n_intervals, state, control_mode, *args):
         is_enabled = len(idv_values[i]) > 0 if idv_values[i] else False
         simulator.set_disturbance(i + 1, 1 if is_enabled else 0)
 
-    # Run simulation steps and record data at each step
+    # Run simulation steps and record data at specified output interval
     speed = state.get('speed', 10)
+    output_interval = sim_data.get('output_interval', 180)  # Default 180 sec (3 min)
     shutdown_occurred = False
     for _ in range(speed):
         if not simulator.step():
@@ -489,19 +551,42 @@ def update_simulation(n_intervals, state, control_mode, *args):
             shutdown_occurred = True
             break
 
-        # Record data at every step to capture noise
-        sim_data['time'].append(simulator.time * 60)  # Convert to minutes
+        # Record data only at specified output interval (like Fortran's 180 sec default)
+        current_time_sec = simulator.time * 3600  # Convert hours to seconds
+        if current_time_sec - sim_data['last_output_time'] >= output_interval:
+            sim_data['last_output_time'] = current_time_sec
+            sim_data['time'].append(simulator.time * 60)  # Convert to minutes for display
 
-        meas = simulator.get_measurements()
+            meas = simulator.get_measurements()
+            for i in range(NUM_MEASUREMENTS):
+                sim_data['measurements'][i].append(meas[i])
+
+            mvs = simulator.get_manipulated_vars()
+            for i in range(NUM_MANIPULATED_VARS):
+                sim_data['mvs'][i].append(mvs[i])
+
+            # Record active disturbances (IDVs)
+            # idv_values[i] is a list: [i] if checked, [] if unchecked
+            active_idvs = []
+            for i in range(NUM_DISTURBANCES):
+                if idv_values[i] is not None and len(idv_values[i]) > 0:
+                    active_idvs.append(i + 1)  # IDV numbers are 1-based
+            sim_data['idv'].append(active_idvs)
+
+    # Limit total data stored to prevent memory issues
+    # Keep max 20,000 points - at speed=10, this is ~3 min of real time before decimation
+    # After decimation cycles, resolution decreases but full time range is preserved
+    max_stored_points = 20000
+    if len(sim_data['time']) > max_stored_points:
+        # Decimate stored data by factor of 2 to free memory
+        # This preserves the full time range but with fewer points
+        step = 2
+        sim_data['time'] = sim_data['time'][::step]
         for i in range(NUM_MEASUREMENTS):
-            sim_data['measurements'][i].append(meas[i])
-
-        mvs = simulator.get_manipulated_vars()
+            sim_data['measurements'][i] = sim_data['measurements'][i][::step]
         for i in range(NUM_MANIPULATED_VARS):
-            sim_data['mvs'][i].append(mvs[i])
-
-    # Note: No longer trimming history - keep all data to show full trajectory
-    # The x-axis will show from t=0 to current time
+            sim_data['mvs'][i] = sim_data['mvs'][i][::step]
+        sim_data['idv'] = sim_data['idv'][::step]
 
     time_str = f"{simulator.time:.2f} hr ({simulator.time*60:.1f} min)"
 
@@ -522,19 +607,30 @@ def create_figure_with_data():
     )
 
     colors = ['#3498db', '#e74c3c', '#2ecc71']
-    time_data = sim_data['time']
+    max_points = sim_data.get('max_display_points', 2000)
+
+    # Decimate time data for display
+    time_data_full = sim_data['time']
+    time_data = decimate_data(time_data_full, max_points)
 
     for idx, (title, signals) in enumerate(PLOT_CONFIGS):
         row = idx // 2 + 1
         col = idx % 2 + 1
 
-        # Collect y values for this subplot to compute axis range
-        all_y_values = []
+        # Track min/max efficiently without copying all data
+        y_min_all = float('inf')
+        y_max_all = float('-inf')
 
         for color_idx, (label, meas_idx) in enumerate(signals):
-            y_data = sim_data['measurements'].get(meas_idx, [])
-            if y_data:
-                all_y_values.extend(y_data)
+            y_data_full = sim_data['measurements'].get(meas_idx, [])
+
+            # Compute min/max directly without creating intermediate list
+            if y_data_full:
+                y_min_all = min(y_min_all, min(y_data_full))
+                y_max_all = max(y_max_all, max(y_data_full))
+
+            # Decimate for display
+            y_data = decimate_data(y_data_full, max_points)
 
             fig.add_trace(
                 go.Scatter(
@@ -550,10 +646,9 @@ def create_figure_with_data():
             )
 
         # Set y-axis range with margin for autoscaling
-        # Use autorange with rangemode='tozero' or compute explicitly
-        if all_y_values:
-            y_min = min(all_y_values)
-            y_max = max(all_y_values)
+        if y_min_all != float('inf'):
+            y_min = y_min_all
+            y_max = y_max_all
             y_range = y_max - y_min
 
             # Ensure minimum range to avoid flat lines at edges
@@ -575,22 +670,22 @@ def create_figure_with_data():
             )
 
         # Set x-axis to start from 0 and extend to current time (no auto-rescaling)
-        if time_data:
-            x_max = max(time_data)
+        if time_data_full:
+            x_max = max(time_data_full)  # Use full data for axis range
             # Add small margin to the right
             fig.update_xaxes(title_text="Time (min)", range=[0, x_max * 1.02], row=row, col=col)
         else:
             fig.update_xaxes(title_text="Time (min)", range=[0, 1], row=row, col=col)
 
     fig.update_layout(
-        height=800,
-        margin=dict(l=60, r=30, t=50, b=40),
+        height=850,
+        margin=dict(l=60, r=30, t=50, b=80),
         template='plotly_white',
         showlegend=True,
         legend=dict(
             orientation='h',
-            yanchor='bottom',
-            y=-0.05,
+            yanchor='top',
+            y=-0.08,
             xanchor='center',
             x=0.5,
             font=dict(size=10)
@@ -598,6 +693,72 @@ def create_figure_with_data():
     )
 
     return fig
+
+
+@callback(
+    Output('download-data', 'data'),
+    Input('download-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def download_data(n_clicks):
+    """Generate CSV data for download."""
+    if not sim_data['time']:
+        return None
+
+    # Build CSV content
+    lines = []
+
+    # Header line with column names
+    header = ['Time_hr', 'Time_min']
+    # Measurements XMEAS(1-41)
+    for i in range(NUM_MEASUREMENTS):
+        header.append(f'XMEAS_{i+1}')
+    # Manipulated variables XMV(1-12)
+    for i in range(NUM_MANIPULATED_VARS):
+        header.append(f'XMV_{i+1}')
+    # IDV column for active faults
+    header.append('Active_IDVs')
+    lines.append(','.join(header))
+
+    # Data rows
+    n_points = len(sim_data['time'])
+    for idx in range(n_points):
+        row = []
+        time_min = sim_data['time'][idx]
+        time_hr = time_min / 60.0
+        row.append(f'{time_hr:.6f}')
+        row.append(f'{time_min:.4f}')
+
+        # Measurements
+        for i in range(NUM_MEASUREMENTS):
+            val = sim_data['measurements'][i][idx] if idx < len(sim_data['measurements'][i]) else 0
+            row.append(f'{val:.6f}')
+
+        # Manipulated variables
+        for i in range(NUM_MANIPULATED_VARS):
+            val = sim_data['mvs'][i][idx] if idx < len(sim_data['mvs'][i]) else 0
+            row.append(f'{val:.6f}')
+
+        # Active IDVs (as semicolon-separated list or "0" if none)
+        if idx < len(sim_data['idv']):
+            idv_list = sim_data['idv'][idx]
+            if idv_list and len(idv_list) > 0:
+                idv_str = ';'.join(str(x) for x in idv_list)
+            else:
+                idv_str = '0'
+        else:
+            idv_str = '0'
+        row.append(idv_str)
+
+        lines.append(','.join(row))
+
+    csv_content = '\n'.join(lines)
+
+    return dict(
+        content=csv_content,
+        filename='tep_simulation_data.csv',
+        type='text/csv'
+    )
 
 
 def run_dashboard(host='127.0.0.1', port=8050, debug=False, open_browser=True):
