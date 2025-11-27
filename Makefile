@@ -245,16 +245,19 @@ docs:
 fortran-build:
 	@echo "Building Fortran code..."
 	@if command -v gfortran >/dev/null 2>&1; then \
-		gfortran -o tep_fortran temain_mod.f teprob.f; \
+		sed 's|~/|./|g' temain_mod.f > temain_mod_local.f; \
+		gfortran -o tep_fortran temain_mod_local.f teprob.f; \
+		rm -f temain_mod_local.f; \
 		echo "Built: tep_fortran"; \
 	else \
-		echo "gfortran not found. Install with: apt install gfortran"; \
+		echo "gfortran not found. Install with: brew install gcc (macOS) or apt install gfortran (Linux)"; \
 	fi
 
 fortran-run: fortran-build
 	@echo "Running Fortran TEP simulation..."
+	@echo "Note: Will prompt for disturbance (1=no disturbance, then 0=none)"
 	@if [ -f tep_fortran ]; then \
-		./tep_fortran; \
+		echo "1 0" | ./tep_fortran; \
 		echo ""; \
 		echo "Output files generated:"; \
 		ls -la TE_data_*.dat 2>/dev/null || echo "  (no output files found)"; \
@@ -263,4 +266,4 @@ fortran-run: fortran-build
 	fi
 
 fortran-clean:
-	rm -f tep_fortran a.out TE_data_*.dat
+	rm -f tep_fortran temain_mod_local.f a.out TE_data_*.dat
