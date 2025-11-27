@@ -208,6 +208,54 @@ fault1_data = get_fault_data(data["faulty_testing"], fault_number=1)
 features = get_features(fault1_data)
 ```
 
+### Comparing with Harvard Dataverse Original
+
+The script can download the original dataset from Harvard Dataverse and compare it with locally generated data:
+
+```bash
+# Download original dataset from Harvard Dataverse
+python examples/rieth2017_dataset.py --download-harvard
+
+# Compare generated data with original
+python examples/rieth2017_dataset.py --compare
+
+# Requirements for comparison
+pip install requests pyreadr
+```
+
+**Python API:**
+
+```python
+from examples.rieth2017_dataset import (
+    HarvardDataverseDataset,
+    compare_datasets,
+    compare_with_harvard,
+)
+
+# Download and load original dataset
+harvard = HarvardDataverseDataset()
+harvard.download()
+original_data = harvard.load("fault_free_training")
+
+# Compare with generated data
+results = compare_with_harvard(local_dir="./data/rieth2017")
+
+# Or compare specific arrays
+from examples.rieth2017_dataset import load_rieth2017_dataset
+local_data = load_rieth2017_dataset("./data/rieth2017")
+comparison = compare_datasets(
+    local_data["fault_free_training"],
+    original_data,
+    name="fault_free_training"
+)
+```
+
+The comparison reports:
+- Shape differences
+- Per-fault statistics for key variables
+- Mean correlation between datasets
+- Mean absolute percentage error (MAPE)
+
 ## Related Datasets
 
 ### Original Braatz Dataset

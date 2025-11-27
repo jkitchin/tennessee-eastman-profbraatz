@@ -100,6 +100,17 @@ python examples/rieth2017_dataset.py --n-simulations 100 --faults 1,4,6
 - `faulty_testing.npy` - Faulty testing data
 - `metadata.json` - Dataset metadata
 
+**Compare with Harvard Dataverse original:**
+```bash
+# Download original Rieth 2017 dataset
+python examples/rieth2017_dataset.py --download-harvard
+
+# Compare generated vs original
+python examples/rieth2017_dataset.py --compare
+
+# Requirements: pip install requests pyreadr
+```
+
 **Reference:** Rieth, C.A., et al. (2017). "Issues and Advances in Anomaly Detection Evaluation for Joint Human-Automated Systems." AHFE 2017.
 
 ## Quick Start

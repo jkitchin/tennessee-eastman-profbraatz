@@ -30,9 +30,22 @@ import numpy as np
 try:
     from tep import TEPSimulator
     from tep.simulator import ControlMode
+    HAS_TEP = True
 except ImportError:
-    print("Error: tep package not installed. Run: pip install -e .")
-    sys.exit(1)
+    HAS_TEP = False
+
+# Optional dependencies for downloading/comparing with Harvard Dataverse
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
+try:
+    import pyreadr
+    HAS_PYREADR = True
+except ImportError:
+    HAS_PYREADR = False
 
 
 # Dataset parameters matching Rieth et al. 2017
@@ -69,6 +82,385 @@ FAULT_DESCRIPTIONS = {
     19: "Unknown fault 19",
     20: "Unknown fault 20",
 }
+
+# Harvard Dataverse file IDs for the original dataset
+HARVARD_DATAVERSE_FILES = {
+    "fault_free_training": {
+        "id": "3364637",
+        "filename": "TEP_FaultFree_Training.RData",
+        "var_name": "fault_free_training",
+    },
+    "fault_free_testing": {
+        "id": "3364636",
+        "filename": "TEP_FaultFree_Testing.RData",
+        "var_name": "fault_free_testing",
+    },
+    "faulty_training": {
+        "id": "3364635",
+        "filename": "TEP_Faulty_Training.RData",
+        "var_name": "faulty_training",
+    },
+    "faulty_testing": {
+        "id": "3364634",
+        "filename": "TEP_Faulty_Testing.RData",
+        "var_name": "faulty_testing",
+    },
+}
+
+# Variable names for comparison
+VARIABLE_NAMES = (
+    ["faultNumber", "simulationRun", "sample"]
+    + [f"xmeas_{i}" for i in range(1, 42)]
+    + [f"xmv_{i}" for i in range(1, 12)]
+)
+
+# Key variables for comparison (indices into feature columns, 0-indexed)
+KEY_VARIABLES = {
+    "Reactor Temperature": 8,      # XMEAS(9)
+    "Reactor Pressure": 6,         # XMEAS(7)
+    "Reactor Level": 7,            # XMEAS(8)
+    "Separator Temperature": 10,   # XMEAS(11)
+    "Separator Level": 11,         # XMEAS(12)
+    "Stripper Level": 14,          # XMEAS(15)
+    "Compressor Work": 19,         # XMEAS(20)
+    "D Feed Flow (MV)": 41,        # XMV(1)
+    "Reactor CW Flow (MV)": 50,    # XMV(10)
+}
+
+
+class HarvardDataverseDataset:
+    """
+    Download and load the original Rieth 2017 dataset from Harvard Dataverse.
+
+    This class provides access to the original dataset for comparison with
+    locally generated data.
+
+    Parameters
+    ----------
+    data_dir : str or Path, optional
+        Directory to store downloaded files.
+
+    Examples
+    --------
+    >>> harvard = HarvardDataverseDataset()
+    >>> harvard.download()
+    >>> df = harvard.load("fault_free_training")
+    """
+
+    DATAVERSE_URL = "https://dataverse.harvard.edu/api/access/datafile"
+
+    def __init__(self, data_dir: Optional[str] = None):
+        if data_dir is None:
+            data_dir = Path(__file__).parent.parent / "data" / "harvard_dataverse"
+        self.data_dir = Path(data_dir)
+        self._cache = {}
+
+    def download(self, files: Optional[List[str]] = None, force: bool = False) -> None:
+        """
+        Download dataset files from Harvard Dataverse.
+
+        Parameters
+        ----------
+        files : list of str, optional
+            Which files to download. Options: fault_free_training,
+            fault_free_testing, faulty_training, faulty_testing.
+            Default: all files.
+        force : bool
+            Re-download even if files exist.
+        """
+        if not HAS_REQUESTS:
+            raise ImportError(
+                "requests library required for download. "
+                "Install with: pip install requests"
+            )
+
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        files = files or list(HARVARD_DATAVERSE_FILES.keys())
+
+        for name in files:
+            if name not in HARVARD_DATAVERSE_FILES:
+                print(f"Unknown file: {name}, skipping...")
+                continue
+
+            info = HARVARD_DATAVERSE_FILES[name]
+            filepath = self.data_dir / info["filename"]
+
+            if filepath.exists() and not force:
+                print(f"  {info['filename']} already exists, skipping...")
+                continue
+
+            print(f"Downloading {info['filename']} from Harvard Dataverse...")
+            url = f"{self.DATAVERSE_URL}/{info['id']}"
+
+            try:
+                response = requests.get(url, stream=True, timeout=300)
+                response.raise_for_status()
+
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            pct = (downloaded / total_size) * 100
+                            print(f"\r  Progress: {pct:.1f}%", end="", flush=True)
+
+                print(f"\n  Saved: {filepath}")
+
+            except requests.RequestException as e:
+                print(f"  Error downloading {name}: {e}")
+
+    def load(self, name: str) -> np.ndarray:
+        """
+        Load a dataset file as numpy array.
+
+        Parameters
+        ----------
+        name : str
+            Dataset name: fault_free_training, fault_free_testing,
+            faulty_training, or faulty_testing.
+
+        Returns
+        -------
+        np.ndarray
+            Dataset array with shape (n_rows, 55)
+        """
+        if not HAS_PYREADR:
+            raise ImportError(
+                "pyreadr library required to load RData files. "
+                "Install with: pip install pyreadr"
+            )
+
+        if name in self._cache:
+            return self._cache[name]
+
+        if name not in HARVARD_DATAVERSE_FILES:
+            raise ValueError(f"Unknown dataset: {name}")
+
+        info = HARVARD_DATAVERSE_FILES[name]
+        filepath = self.data_dir / info["filename"]
+
+        if not filepath.exists():
+            raise FileNotFoundError(
+                f"File not found: {filepath}\n"
+                "Run harvard.download() first."
+            )
+
+        print(f"Loading {info['filename']}...")
+        result = pyreadr.read_r(str(filepath))
+
+        # Get the dataframe from the RData file
+        df = list(result.values())[0]
+
+        # Convert to numpy array
+        data = df.values
+        self._cache[name] = data
+
+        print(f"  Loaded shape: {data.shape}")
+        return data
+
+    def load_all(self) -> Dict[str, np.ndarray]:
+        """Load all available dataset files."""
+        data = {}
+        for name in HARVARD_DATAVERSE_FILES:
+            try:
+                data[name] = self.load(name)
+            except FileNotFoundError:
+                print(f"  {name}: not downloaded")
+        return data
+
+
+def compare_datasets(
+    generated: np.ndarray,
+    original: np.ndarray,
+    name: str = "Dataset",
+    fault_numbers: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """
+    Compare generated dataset with original Harvard Dataverse dataset.
+
+    Parameters
+    ----------
+    generated : np.ndarray
+        Locally generated dataset (n_rows, 55)
+    original : np.ndarray
+        Original Harvard Dataverse dataset (n_rows, 55)
+    name : str
+        Name for the comparison report
+    fault_numbers : list of int, optional
+        Specific faults to compare (default: all available)
+
+    Returns
+    -------
+    dict
+        Comparison results with statistics for each variable
+    """
+    print(f"\n{'='*70}")
+    print(f"Dataset Comparison: {name}")
+    print(f"{'='*70}")
+
+    print(f"\nShape comparison:")
+    print(f"  Generated: {generated.shape}")
+    print(f"  Original:  {original.shape}")
+
+    # Get unique fault numbers
+    gen_faults = np.unique(generated[:, 0]).astype(int)
+    orig_faults = np.unique(original[:, 0]).astype(int)
+
+    if fault_numbers is None:
+        fault_numbers = list(set(gen_faults) & set(orig_faults))
+
+    print(f"\nFaults in generated: {list(gen_faults)}")
+    print(f"Faults in original:  {list(orig_faults)}")
+    print(f"Comparing faults:    {fault_numbers}")
+
+    results = {"name": name, "faults": {}}
+
+    for fault_num in sorted(fault_numbers):
+        gen_mask = generated[:, 0] == fault_num
+        orig_mask = original[:, 0] == fault_num
+
+        gen_data = generated[gen_mask]
+        orig_data = original[orig_mask]
+
+        if len(gen_data) == 0 or len(orig_data) == 0:
+            print(f"\n  Fault {fault_num}: insufficient data, skipping")
+            continue
+
+        print(f"\n  Fault {fault_num}: {FAULT_DESCRIPTIONS.get(fault_num, 'Unknown')}")
+        print(f"    Generated samples: {len(gen_data)}")
+        print(f"    Original samples:  {len(orig_data)}")
+
+        fault_results = {"n_generated": len(gen_data), "n_original": len(orig_data), "variables": {}}
+
+        # Compare key variables
+        print(f"\n    {'Variable':<25} {'Gen Mean':>10} {'Orig Mean':>10} {'Diff %':>10} {'Gen Std':>10} {'Orig Std':>10}")
+        print(f"    {'-'*75}")
+
+        for var_name, var_idx in KEY_VARIABLES.items():
+            col_idx = var_idx + 3  # Offset for faultNumber, simulationRun, sample
+
+            gen_vals = gen_data[:, col_idx]
+            orig_vals = orig_data[:, col_idx]
+
+            gen_mean = np.mean(gen_vals)
+            orig_mean = np.mean(orig_vals)
+            gen_std = np.std(gen_vals)
+            orig_std = np.std(orig_vals)
+
+            if abs(orig_mean) > 1e-6:
+                diff_pct = ((gen_mean - orig_mean) / orig_mean) * 100
+            else:
+                diff_pct = 0.0 if abs(gen_mean) < 1e-6 else float('inf')
+
+            print(f"    {var_name:<25} {gen_mean:>10.2f} {orig_mean:>10.2f} {diff_pct:>+10.1f}% {gen_std:>10.2f} {orig_std:>10.2f}")
+
+            fault_results["variables"][var_name] = {
+                "gen_mean": float(gen_mean),
+                "orig_mean": float(orig_mean),
+                "diff_pct": float(diff_pct),
+                "gen_std": float(gen_std),
+                "orig_std": float(orig_std),
+            }
+
+        results["faults"][fault_num] = fault_results
+
+    # Overall summary
+    print(f"\n{'='*70}")
+    print("Summary")
+    print(f"{'='*70}")
+
+    all_gen_features = generated[:, 3:]
+    all_orig_features = original[:, 3:]
+
+    # Compute correlation between means
+    gen_means = np.mean(all_gen_features, axis=0)
+    orig_means = np.mean(all_orig_features, axis=0)
+
+    correlation = np.corrcoef(gen_means, orig_means)[0, 1]
+    print(f"\nOverall mean correlation: {correlation:.4f}")
+
+    # Mean absolute percentage error
+    valid_mask = np.abs(orig_means) > 1e-6
+    mape = np.mean(np.abs((gen_means[valid_mask] - orig_means[valid_mask]) / orig_means[valid_mask])) * 100
+    print(f"Mean absolute % error:    {mape:.2f}%")
+
+    results["summary"] = {
+        "mean_correlation": float(correlation),
+        "mape": float(mape),
+    }
+
+    return results
+
+
+def compare_with_harvard(
+    local_dir: Optional[str] = None,
+    harvard_dir: Optional[str] = None,
+    datasets: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Compare locally generated dataset with Harvard Dataverse original.
+
+    Parameters
+    ----------
+    local_dir : str, optional
+        Directory containing generated data
+    harvard_dir : str, optional
+        Directory containing Harvard Dataverse data
+    datasets : list of str, optional
+        Which datasets to compare (default: all available)
+
+    Returns
+    -------
+    dict
+        Full comparison results
+    """
+    if local_dir is None:
+        local_dir = Path(__file__).parent.parent / "data" / "rieth2017"
+    local_dir = Path(local_dir)
+
+    # Load local data
+    print("Loading locally generated data...")
+    local_data = load_rieth2017_dataset(str(local_dir))
+
+    if not local_data:
+        print("No local data found. Generate data first with --small or --full")
+        return {}
+
+    # Download and load Harvard data
+    print("\nLoading Harvard Dataverse data...")
+    harvard = HarvardDataverseDataset(data_dir=harvard_dir)
+
+    # Download files that correspond to local data
+    available_local = list(local_data.keys())
+    if datasets:
+        to_download = [d for d in datasets if d in available_local]
+    else:
+        to_download = available_local
+
+    harvard.download(files=to_download)
+
+    # Run comparisons
+    all_results = {}
+
+    for dataset_name in to_download:
+        if dataset_name not in local_data:
+            continue
+
+        try:
+            harvard_data = harvard.load(dataset_name)
+            results = compare_datasets(
+                local_data[dataset_name],
+                harvard_data,
+                name=dataset_name,
+            )
+            all_results[dataset_name] = results
+        except (FileNotFoundError, ImportError) as e:
+            print(f"Could not compare {dataset_name}: {e}")
+
+    return all_results
 
 
 class Rieth2017DatasetGenerator:
@@ -131,6 +523,9 @@ class Rieth2017DatasetGenerator:
         dict
             Simulation results with measurements and MVs
         """
+        if not HAS_TEP:
+            raise ImportError("TEP simulator not available. Install with: pip install -e .")
+
         sim = TEPSimulator(random_seed=seed, control_mode=ControlMode.CLOSED_LOOP)
         sim.initialize()
 
@@ -692,6 +1087,57 @@ def example_load_and_analyze():
     print(f"  Max:  {reactor_temp.max():.2f}")
 
 
+def example_compare_with_harvard(local_dir: Optional[str] = None):
+    """Example: Compare generated dataset with Harvard Dataverse original."""
+    print("Example: Compare with Harvard Dataverse Dataset")
+    print("=" * 60)
+    print()
+    print("This compares locally generated data with the original Rieth et al.")
+    print("2017 dataset from Harvard Dataverse (https://doi.org/10.7910/DVN/6C3JR1)")
+    print()
+
+    # Check dependencies
+    if not HAS_REQUESTS:
+        print("ERROR: 'requests' library required for download.")
+        print("Install with: pip install requests")
+        return
+
+    if not HAS_PYREADR:
+        print("ERROR: 'pyreadr' library required to load RData files.")
+        print("Install with: pip install pyreadr")
+        return
+
+    results = compare_with_harvard(local_dir=local_dir)
+
+    if results:
+        # Save comparison results
+        output_file = Path(local_dir or "./data/rieth2017") / "comparison_results.json"
+        with open(output_file, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\nResults saved to: {output_file}")
+
+
+def example_download_harvard_only():
+    """Example: Just download the Harvard Dataverse dataset without comparison."""
+    print("Example: Download Harvard Dataverse Dataset")
+    print("=" * 60)
+    print()
+    print("Downloading original Rieth et al. 2017 dataset from Harvard Dataverse...")
+    print("DOI: https://doi.org/10.7910/DVN/6C3JR1")
+    print()
+
+    if not HAS_REQUESTS:
+        print("ERROR: 'requests' library required for download.")
+        print("Install with: pip install requests")
+        return
+
+    harvard = HarvardDataverseDataset()
+    harvard.download()
+
+    print()
+    print(f"Files downloaded to: {harvard.data_dir}")
+
+
 def main():
     """Run examples."""
     import argparse
@@ -715,6 +1161,16 @@ def main():
         help="Load and analyze existing dataset",
     )
     parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Compare generated data with Harvard Dataverse original",
+    )
+    parser.add_argument(
+        "--download-harvard",
+        action="store_true",
+        help="Download original dataset from Harvard Dataverse",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
@@ -735,7 +1191,11 @@ def main():
 
     args = parser.parse_args()
 
-    if args.analyze:
+    if args.compare:
+        example_compare_with_harvard(local_dir=args.output_dir)
+    elif args.download_harvard:
+        example_download_harvard_only()
+    elif args.analyze:
         example_load_and_analyze()
     elif args.full:
         example_generate_full()
@@ -757,24 +1217,29 @@ def main():
             fault_numbers=fault_numbers,
         )
     else:
-        # Default: show help and run small example
+        # Default: show help
         print("Rieth et al. 2017 TEP Dataset Generator")
         print("=" * 60)
         print()
         print("This script generates TEP datasets matching the specifications")
         print("of Rieth et al. (2017) using the local TEP simulator.")
         print()
-        print("Usage:")
+        print("Generate data:")
         print("  python rieth2017_dataset.py --small    # Quick test (5 sims)")
         print("  python rieth2017_dataset.py --full     # Full dataset (500 sims)")
-        print("  python rieth2017_dataset.py --analyze  # Analyze existing data")
         print()
         print("Custom generation:")
         print("  python rieth2017_dataset.py --n-simulations 100 --faults 1,2,4,6")
         print()
-        print("Running small example...")
+        print("Compare with original:")
+        print("  python rieth2017_dataset.py --download-harvard  # Download original")
+        print("  python rieth2017_dataset.py --compare           # Compare datasets")
         print()
-        example_generate_small()
+        print("Analyze:")
+        print("  python rieth2017_dataset.py --analyze  # Analyze existing data")
+        print()
+        print("Requirements for comparison:")
+        print("  pip install requests pyreadr")
 
 
 if __name__ == "__main__":
