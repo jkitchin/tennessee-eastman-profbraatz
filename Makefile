@@ -35,6 +35,11 @@ help:
 	@echo "    build          Build distribution packages"
 	@echo "    clean          Clean all build artifacts"
 	@echo ""
+	@echo "  Fortran (original code):"
+	@echo "    fortran-build  Compile original Fortran code"
+	@echo "    fortran-run    Build and run Fortran simulation"
+	@echo "    fortran-clean  Clean Fortran build artifacts"
+	@echo ""
 
 # ============================================================================
 # Installation targets
@@ -244,6 +249,17 @@ fortran-build:
 		echo "Built: tep_fortran"; \
 	else \
 		echo "gfortran not found. Install with: apt install gfortran"; \
+	fi
+
+fortran-run: fortran-build
+	@echo "Running Fortran TEP simulation..."
+	@if [ -f tep_fortran ]; then \
+		./tep_fortran; \
+		echo ""; \
+		echo "Output files generated:"; \
+		ls -la TE_data_*.dat 2>/dev/null || echo "  (no output files found)"; \
+	else \
+		echo "Error: tep_fortran not found. Run 'make fortran-build' first."; \
 	fi
 
 fortran-clean:
