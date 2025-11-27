@@ -4,5 +4,5 @@ try:
 except ImportError as e:
     raise ImportError(
         f"Fortran extension not available: {e}\n"
-        "Install with Fortran compiler or use backend='python'"
+        "Install with: pip install .[dev] (requires gfortran)"
     ) from e
