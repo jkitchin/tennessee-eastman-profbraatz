@@ -23,6 +23,7 @@ from .constants import (
     MANIPULATED_VAR_NAMES,
     DISTURBANCE_NAMES,
 )
+from .controller_base import ControllerRegistry, BaseController
 
 
 def parse_faults(fault_str: str) -> List[int]:
@@ -208,6 +209,26 @@ def list_faults():
     print()
 
 
+def list_controllers():
+    """Print list of available controller plugins."""
+    # Import plugins to ensure they're registered
+    from . import controller_plugins  # noqa: F401
+
+    print("\nAvailable Controller Plugins:")
+    print("-" * 70)
+
+    controllers = ControllerRegistry.list_all_info()
+    if not controllers:
+        print("  No controllers registered.")
+    else:
+        for info in controllers:
+            print(f"  {info['name']:20s} - {info['description']}")
+    print()
+    print("Use --controller <name> to select a controller.")
+    print("Default: decentralized (original TEP control scheme)")
+    print()
+
+
 def plot_results(result, faults: Optional[List[int]] = None, save_path: Optional[str] = None):
     """
     Display simulation results in a graphical form.
@@ -328,7 +349,8 @@ def run_simulation(
     no_header: bool = False,
     quiet: bool = False,
     plot: bool = False,
-    plot_save: Optional[str] = None
+    plot_save: Optional[str] = None,
+    controller: Optional[str] = None
 ) -> int:
     """
     Run a batch simulation and save results.
@@ -345,6 +367,7 @@ def run_simulation(
         quiet: Suppress progress output
         plot: Display results graphically
         plot_save: Save plot to file path instead of displaying
+        controller: Name of controller plugin to use (default: decentralized)
 
     Returns:
         Exit code (0 = success)
@@ -358,15 +381,32 @@ def run_simulation(
         for fault_id, start_time in zip(faults, fault_times):
             disturbances[fault_id] = (start_time, 1)
 
+    # Create controller if specified
+    controller_instance = None
+    controller_name = controller or "decentralized"
+    if controller_name != "decentralized":
+        # Import plugins to ensure they're registered
+        from . import controller_plugins  # noqa: F401
+        try:
+            controller_instance = ControllerRegistry.create(controller_name)
+        except KeyError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     # Create simulator
     sim = TEPSimulator(random_seed=seed, control_mode=ControlMode.CLOSED_LOOP)
     sim.initialize()
+
+    # Replace controller if custom one specified
+    if controller_instance is not None:
+        sim.controller = controller_instance
 
     if not quiet:
         print(f"Tennessee Eastman Process Simulation")
         print(f"=" * 40)
         print(f"Duration: {duration_hours} hours")
         print(f"Random seed: {seed}")
+        print(f"Controller: {controller_name}")
         print(f"Record interval: {record_interval} steps ({record_interval} seconds)")
         if faults:
             print(f"Faults: {faults}")
@@ -533,6 +573,20 @@ Examples:
     )
 
     parser.add_argument(
+        '--controller', '-c',
+        type=str,
+        default=None,
+        metavar='NAME',
+        help='Controller plugin to use (default: decentralized). Use --list-controllers to see available options.'
+    )
+
+    parser.add_argument(
+        '--list-controllers',
+        action='store_true',
+        help='List available controller plugins and exit'
+    )
+
+    parser.add_argument(
         '--plot', '-p',
         action='store_true',
         help='Display results graphically (requires matplotlib)'
@@ -551,6 +605,11 @@ Examples:
     # Handle --list-faults
     if args.list_faults:
         list_faults()
+        return 0
+
+    # Handle --list-controllers
+    if args.list_controllers:
+        list_controllers()
         return 0
 
     # Parse faults
@@ -577,7 +636,8 @@ Examples:
             no_header=args.no_header,
             quiet=args.quiet,
             plot=args.plot,
-            plot_save=args.plot_save
+            plot_save=args.plot_save,
+            controller=args.controller
         )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
