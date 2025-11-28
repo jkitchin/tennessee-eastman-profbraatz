@@ -114,7 +114,6 @@ __all__ = [
 
 
 def run_dashboard():
-    """Launch the interactive GUI dashboard."""
-    from .dashboard import TEPDashboard
-    app = TEPDashboard()
-    app.run()
+    """Launch the interactive web dashboard."""
+    from .dashboard_dash import run_dashboard as _run_dashboard
+    _run_dashboard()

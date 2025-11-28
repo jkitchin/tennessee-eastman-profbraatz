@@ -44,8 +44,8 @@ Python wrapper developed with Claude Code by John Kitchin.
 # Basic installation (requires gfortran)
 pip install -e .
 
-# With GUI dashboard support
-pip install -e ".[gui]"
+# With web dashboard support (includes Dash and Plotly)
+pip install -e ".[web]"
 
 # For development (includes pytest)
 pip install -e ".[dev]"
@@ -325,7 +325,6 @@ tep/
 ├── detector_base.py     # Fault detection system base classes
 ├── detector_plugins.py  # Built-in detector implementations (PCA, EWMA, etc.)
 ├── cli.py               # Batch simulation CLI (tep-sim command)
-├── dashboard.py         # Interactive tkinter GUI dashboard
 ├── dashboard_dash.py    # Web-based Dash dashboard (tep-web command)
 └── _fortran/            # Compiled Fortran extension (built during install)
     └── teprob.cpython-*.so

@@ -34,12 +34,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gui = [
-    "matplotlib>=3.5.0",
-]
 web = [
     "dash>=2.0.0",
     "plotly>=5.0.0",
+]
+plot = [
+    "matplotlib>=3.5.0",
 ]
 dev = [
     "pytest>=7.0.0",

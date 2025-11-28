@@ -7,7 +7,6 @@ py.install_sources(
     'controller_base.py',
     'controller_plugins.py',
     'controllers.py',
-    'dashboard.py',
     'dashboard_dash.py',
     'detector_base.py',
     'detector_plugins.py',
