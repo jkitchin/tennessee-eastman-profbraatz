@@ -27,11 +27,20 @@ References:
 
 from .simulator import TEPSimulator
 from .fortran_backend import FortranTEProcess
-from .controllers import PIController, DecentralizedController
+from .controllers import PIController, DecentralizedController, ManualController
+from .controller_base import (
+    BaseController,
+    ControllerRegistry,
+    CompositeController,
+    register_controller,
+)
 from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES,
     COMPONENT_NAMES, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES, DISTURBANCE_NAMES
 )
+
+# Import plugins to register them
+from . import controller_plugins
 
 __version__ = "2.0.0"
 __author__ = "Fortran wrapper of Downs & Vogel (1993)"
@@ -60,10 +69,20 @@ def get_default_backend():
 
 
 __all__ = [
+    # Simulator
     "TEPSimulator",
     "FortranTEProcess",
+    # Controllers
     "PIController",
     "DecentralizedController",
+    "ManualController",
+    # Controller Plugin System
+    "BaseController",
+    "ControllerRegistry",
+    "CompositeController",
+    "register_controller",
+    "controller_plugins",
+    # Constants
     "NUM_STATES",
     "NUM_MEASUREMENTS",
     "NUM_MANIPULATED_VARS",
@@ -72,6 +91,7 @@ __all__ = [
     "MEASUREMENT_NAMES",
     "MANIPULATED_VAR_NAMES",
     "DISTURBANCE_NAMES",
+    # Utilities
     "get_available_backends",
     "get_default_backend",
 ]

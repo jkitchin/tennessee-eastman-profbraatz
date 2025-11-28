@@ -4,6 +4,8 @@ py.install_sources(
     '__init__.py',
     'cli.py',
     'constants.py',
+    'controller_base.py',
+    'controller_plugins.py',
     'controllers.py',
     'dashboard.py',
     'dashboard_dash.py',

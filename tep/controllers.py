@@ -7,8 +7,10 @@ control scheme from temain_mod.f.
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
+
+from .controller_base import BaseController, ControllerRegistry, register_controller
 
 
 class ControllerType(Enum):
@@ -125,12 +127,21 @@ class CascadeController:
     secondary_scale: float = 1.0  # Scaling between primary output and secondary setpoint
 
 
-class DecentralizedController:
+@register_controller(
+    name="decentralized",
+    description="Decentralized multi-loop PI control system (18+ loops)"
+)
+class DecentralizedController(BaseController):
     """
     Decentralized multi-loop control system for TEP.
 
     Implements the control scheme from temain_mod.f with 18+ loops.
     """
+
+    name = "decentralized"
+    description = "Decentralized multi-loop PI control system (18+ loops)"
+    version = "1.0.0"
+    controlled_mvs = list(range(1, 12))  # Controls MVs 1-11
 
     def __init__(self):
         """Initialize the decentralized controller."""
@@ -445,13 +456,40 @@ class DecentralizedController:
         self.purge_flag = 0
         self.step_count = 0
 
+    def get_parameters(self) -> Dict[str, Any]:
+        """Get controller parameters."""
+        return {
+            "setpoints": self.setpoints.copy(),
+            "purge_flag": self.purge_flag,
+        }
 
-class ManualController:
+    def set_setpoint(self, index: int, value: float):
+        """
+        Set a setpoint value.
+
+        Args:
+            index: Setpoint index (0-19)
+            value: New setpoint value
+        """
+        if 0 <= index < len(self.setpoints):
+            self.setpoints[index] = value
+
+
+@register_controller(
+    name="manual",
+    description="Manual control - holds MVs at specified values"
+)
+class ManualController(BaseController):
     """
     Manual control mode - holds MVs at specified values.
 
     Useful for open-loop testing or when manual intervention is needed.
     """
+
+    name = "manual"
+    description = "Manual control - holds MVs at specified values"
+    version = "1.0.0"
+    controlled_mvs = list(range(1, 13))  # Can control all MVs
 
     def __init__(self, initial_values: np.ndarray = None):
         """
@@ -496,3 +534,14 @@ class ManualController:
             Manual MV values
         """
         return self.mv_values.copy()
+
+    def reset(self):
+        """Reset to initial MV values."""
+        from .constants import INITIAL_STATES
+        self.mv_values = INITIAL_STATES[38:50].copy()
+
+    def get_parameters(self) -> Dict[str, Any]:
+        """Get controller parameters."""
+        return {
+            "mv_values": self.mv_values.copy(),
+        }
