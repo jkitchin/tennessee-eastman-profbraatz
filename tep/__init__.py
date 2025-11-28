@@ -34,6 +34,13 @@ from .controller_base import (
     CompositeController,
     register_controller,
 )
+from .detector_base import (
+    BaseFaultDetector,
+    FaultDetectorRegistry,
+    DetectionResult,
+    DetectionMetrics,
+    register_detector,
+)
 from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES,
     COMPONENT_NAMES, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES, DISTURBANCE_NAMES
@@ -41,6 +48,7 @@ from .constants import (
 
 # Import plugins to register them
 from . import controller_plugins
+from . import detector_plugins
 
 __version__ = "2.0.0"
 __author__ = "Fortran wrapper of Downs & Vogel (1993)"
@@ -82,6 +90,13 @@ __all__ = [
     "CompositeController",
     "register_controller",
     "controller_plugins",
+    # Fault Detection System
+    "BaseFaultDetector",
+    "FaultDetectorRegistry",
+    "DetectionResult",
+    "DetectionMetrics",
+    "register_detector",
+    "detector_plugins",
     # Constants
     "NUM_STATES",
     "NUM_MEASUREMENTS",

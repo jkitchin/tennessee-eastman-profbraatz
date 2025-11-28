@@ -6,11 +6,17 @@ all components and provides an easy-to-use interface for simulation.
 
 This version uses the Fortran backend exclusively via f2py for exact
 reproduction of the original simulation results.
+
+Features:
+    - Batch and streaming simulation modes
+    - Configurable control modes (open loop, closed loop, manual)
+    - Disturbance injection with scheduling
+    - Real-time fault detection with pluggable detectors
 """
 
 import numpy as np
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Callable, Tuple, Union
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Callable, Tuple, Union, TYPE_CHECKING
 from enum import Enum
 from .fortran_backend import FortranTEProcess
 from .controllers import DecentralizedController, ManualController, PIController
@@ -18,6 +24,10 @@ from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS,
     DEFAULT_RANDOM_SEED
 )
+
+# Import detector types for type checking (avoid circular imports)
+if TYPE_CHECKING:
+    from .detector_base import BaseFaultDetector, DetectionResult
 
 
 class ControlMode(Enum):
@@ -36,6 +46,7 @@ class SimulationResult:
     manipulated_vars: np.ndarray  # MV trajectories (n_steps x 12)
     shutdown: bool = False  # Whether simulation ended in shutdown
     shutdown_time: float = None  # Time of shutdown (if any)
+    detection_results: Dict[str, List] = field(default_factory=dict)  # Detector results
 
     @property
     def time_seconds(self) -> np.ndarray:
@@ -56,6 +67,13 @@ class TEPSimulator:
     with various control modes and disturbance scenarios. It uses the original
     Fortran code via f2py for exact reproduction of simulation results.
 
+    Features:
+        - Batch simulation with configurable duration and recording
+        - Real-time streaming mode for dashboards
+        - Multiple control modes (open loop, closed loop, manual)
+        - Disturbance injection with time-based scheduling
+        - Pluggable fault detector support with metrics tracking
+
     Example usage:
         >>> sim = TEPSimulator()
         >>> result = sim.simulate(duration_hours=1.0)
@@ -69,6 +87,16 @@ class TEPSimulator:
         ...     sim.step()
         ...     measurements = sim.get_measurements()
         ...     # Update dashboard
+
+    With fault detection:
+        >>> from tep.detector_base import FaultDetectorRegistry
+        >>> sim = TEPSimulator()
+        >>> detector = FaultDetectorRegistry.create("pca", window_size=200)
+        >>> sim.add_detector(detector)
+        >>> sim.initialize()
+        >>> sim.set_ground_truth(0)  # Normal operation
+        >>> result = sim.simulate(duration_hours=1.0)
+        >>> print(detector.metrics)
     """
 
     def __init__(
@@ -111,6 +139,12 @@ class TEPSimulator:
         self._meas_history: List[np.ndarray] = []
         self._mv_history: List[np.ndarray] = []
 
+        # Fault detection
+        self._detectors: List['BaseFaultDetector'] = []
+        self._detection_results: Dict[str, List['DetectionResult']] = {}
+        self._ground_truth: int = 0  # Current true fault class (0=normal)
+        self._fault_onset_step: Optional[int] = None
+
     def _init_controller(self):
         """Initialize controller based on control mode."""
         if self.control_mode == ControlMode.CLOSED_LOOP:
@@ -125,6 +159,7 @@ class TEPSimulator:
         Initialize or reset the simulator to steady-state conditions.
 
         This must be called before running a simulation or stepping.
+        Resets the process, controller, and all registered detectors.
         """
         self.process._initialize()
         self._init_controller()
@@ -138,6 +173,13 @@ class TEPSimulator:
         self._state_history = [self.process.state.yy.copy()]
         self._meas_history = [self.process.state.xmeas.copy()]
         self._mv_history = [self.process.state.xmv.copy()]
+
+        # Reset detectors
+        self._ground_truth = 0
+        self._fault_onset_step = None
+        self._detection_results = {d.name: [] for d in self._detectors}
+        for detector in self._detectors:
+            detector.reset()
 
         # Calculate initial measurements
         _ = self.process.evaluate(self.time, self.process.state.yy)
@@ -202,6 +244,11 @@ class TEPSimulator:
         """
         Advance simulation by n steps.
 
+        Each step:
+        1. Executes the controller (if not open loop)
+        2. Integrates the process equations
+        3. Processes all registered fault detectors
+
         Args:
             n_steps: Number of integration steps to take
 
@@ -228,6 +275,14 @@ class TEPSimulator:
             self.process.state.yy = self.process.state.yy + yp * self.dt
 
             self.step_count += 1
+
+            # Process fault detectors
+            if self._detectors:
+                xmeas = self.process.get_xmeas()
+                for detector in self._detectors:
+                    result = detector.process(xmeas, self.step_count)
+                    if detector.name in self._detection_results:
+                        self._detection_results[detector.name].append(result)
 
             # Check for shutdown
             if self.process.is_shutdown():
@@ -295,6 +350,9 @@ class TEPSimulator:
             for dist_time, (idv_idx, value) in list(disturbance_times.items()):
                 if self.time >= dist_time:
                     self.set_disturbance(idv_idx, value)
+                    # Update ground truth for detectors
+                    if value != 0:
+                        self.set_ground_truth(idv_idx)
                     del disturbance_times[dist_time]
 
             # Execute one step
@@ -328,7 +386,8 @@ class TEPSimulator:
             measurements=measurements,
             manipulated_vars=mvs,
             shutdown=shutdown,
-            shutdown_time=shutdown_time
+            shutdown_time=shutdown_time,
+            detection_results=dict(self._detection_results)
         )
 
     def simulate_with_controller(
@@ -447,3 +506,168 @@ class TEPSimulator:
             'measurements': np.array(self._meas_history),
             'mvs': np.array(self._mv_history)
         }
+
+    # =========================================================================
+    # Fault Detection Interface
+    # =========================================================================
+
+    def add_detector(self, detector: 'BaseFaultDetector'):
+        """
+        Add a fault detector to the simulation.
+
+        The detector will be called after each simulation step with the
+        current measurements. Detection results are accumulated and can
+        be retrieved via get_detection_results().
+
+        Args:
+            detector: A fault detector instance (must inherit from BaseFaultDetector)
+
+        Example:
+            >>> from tep.detector_base import FaultDetectorRegistry
+            >>> detector = FaultDetectorRegistry.create("pca", window_size=200)
+            >>> sim.add_detector(detector)
+        """
+        self._detectors.append(detector)
+        self._detection_results[detector.name] = []
+        # Set current ground truth
+        detector.set_ground_truth(self._ground_truth, self._fault_onset_step)
+
+    def remove_detector(self, name: str) -> bool:
+        """
+        Remove a detector by name.
+
+        Args:
+            name: Name of the detector to remove
+
+        Returns:
+            True if detector was found and removed, False otherwise
+        """
+        for i, detector in enumerate(self._detectors):
+            if detector.name == name:
+                self._detectors.pop(i)
+                self._detection_results.pop(name, None)
+                return True
+        return False
+
+    def get_detector(self, name: str) -> Optional['BaseFaultDetector']:
+        """
+        Get a detector by name.
+
+        Args:
+            name: Name of the detector
+
+        Returns:
+            Detector instance or None if not found
+        """
+        for detector in self._detectors:
+            if detector.name == name:
+                return detector
+        return None
+
+    def list_detectors(self) -> List[str]:
+        """
+        List names of all registered detectors.
+
+        Returns:
+            List of detector names
+        """
+        return [d.name for d in self._detectors]
+
+    def clear_detectors(self):
+        """Remove all registered detectors."""
+        for detector in self._detectors:
+            detector.shutdown()
+        self._detectors.clear()
+        self._detection_results.clear()
+
+    def set_ground_truth(self, fault_class: int):
+        """
+        Set the current ground truth fault class for all detectors.
+
+        This enables detectors to track their accuracy metrics. Call this
+        when the true process state changes (e.g., when a fault is introduced).
+
+        Args:
+            fault_class: True fault class (0=normal, 1-20=IDV fault index)
+
+        Example:
+            >>> sim.set_ground_truth(0)  # Normal operation
+            >>> sim.set_disturbance(4, 1)  # Introduce fault
+            >>> sim.set_ground_truth(4)  # Tell detectors the truth
+        """
+        old_truth = self._ground_truth
+        self._ground_truth = fault_class
+
+        # Track when fault started
+        if fault_class > 0 and old_truth == 0:
+            self._fault_onset_step = self.step_count
+        elif fault_class == 0:
+            self._fault_onset_step = None
+
+        # Update all detectors
+        for detector in self._detectors:
+            detector.set_ground_truth(fault_class, self._fault_onset_step)
+
+    def get_ground_truth(self) -> int:
+        """
+        Get the current ground truth fault class.
+
+        Returns:
+            Current fault class (0=normal, 1-20=fault)
+        """
+        return self._ground_truth
+
+    def get_detection_results(self, detector_name: str = None) -> Dict[str, List]:
+        """
+        Get detection results from registered detectors.
+
+        Args:
+            detector_name: Optional name to get results for specific detector
+
+        Returns:
+            Dict mapping detector name to list of DetectionResult objects.
+            If detector_name is specified, returns only that detector's results.
+        """
+        if detector_name:
+            return {detector_name: self._detection_results.get(detector_name, [])}
+        return dict(self._detection_results)
+
+    def get_latest_detection(self, detector_name: str = None) -> Dict[str, 'DetectionResult']:
+        """
+        Get the most recent detection result from each detector.
+
+        Args:
+            detector_name: Optional name to get result for specific detector
+
+        Returns:
+            Dict mapping detector name to latest DetectionResult
+        """
+        results = {}
+        for name, result_list in self._detection_results.items():
+            if detector_name and name != detector_name:
+                continue
+            if result_list:
+                results[name] = result_list[-1]
+        return results
+
+    def get_detector_metrics(self, detector_name: str = None) -> Dict[str, Dict]:
+        """
+        Get performance metrics from detectors.
+
+        Args:
+            detector_name: Optional name to get metrics for specific detector
+
+        Returns:
+            Dict mapping detector name to metrics summary dict
+        """
+        metrics = {}
+        for detector in self._detectors:
+            if detector_name and detector.name != detector_name:
+                continue
+            metrics[detector.name] = detector.metrics.summary()
+        return metrics
+
+    def reset_detector_metrics(self):
+        """Reset metrics for all detectors without resetting detector state."""
+        for detector in self._detectors:
+            detector.reset_metrics()

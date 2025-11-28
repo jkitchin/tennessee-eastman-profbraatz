@@ -15,6 +15,8 @@ Python wrapper developed with Claude Code by John Kitchin.
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
 - **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
 - **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
+- **Real-time fault detection** with pluggable detector modules and performance metrics
+- **Controller plugin system** for custom control strategies
 - **Batch simulation CLI** (`tep-sim`) for scripted data generation with Fortran-compatible output
 - **Real-time streaming interface** for dashboard integration
 - **Interactive web dashboard** (`tep-web`) with live plotting and controls
@@ -104,6 +106,72 @@ The web dashboard provides:
 - Manual valve manipulation
 - Data export to CSV
 
+### Fault Detection
+
+The simulator includes a pluggable fault detection system with built-in detectors and support for custom implementations:
+
+```python
+from tep import TEPSimulator, FaultDetectorRegistry
+
+# Create simulator
+sim = TEPSimulator()
+
+# Add a detector
+detector = FaultDetectorRegistry.create("pca", window_size=200)
+sim.add_detector(detector)
+
+# Run simulation with fault injection
+sim.initialize()
+sim.set_ground_truth(0)  # Normal operation
+
+result = sim.simulate(
+    duration_hours=2.0,
+    disturbances={4: (1.0, 1)}  # Fault at t=1 hour
+)
+
+# Check detector performance
+print(detector.metrics)
+# DetectionMetrics (7200 samples, 0 unknown)
+#   Accuracy:             0.856
+#   Fault Detection Rate: 0.923
+#   False Alarm Rate:     0.034
+```
+
+**Built-in Detectors:**
+
+| Detector | Description | Window |
+|----------|-------------|--------|
+| `threshold` | Safety limit checking | None |
+| `ewma` | Exponentially weighted moving average | Stateful |
+| `cusum` | Cumulative sum control chart | 100 pts |
+| `pca` | Principal Component Analysis (T², SPE) | 200 pts |
+| `statistical` | Multi-statistic ensemble | 120 pts |
+| `sliding_window` | Window comparison | 60 pts |
+
+**Custom Detector Example:**
+
+```python
+from tep import BaseFaultDetector, DetectionResult, register_detector
+
+@register_detector(name="my_detector")
+class MyDetector(BaseFaultDetector):
+    window_size = 100
+    detect_interval = 10  # Run every 10 steps
+
+    def detect(self, xmeas, step):
+        if not self.window_ready:
+            return DetectionResult(-1, 0.0, step)
+
+        # Your detection logic using self.window
+        pressure = xmeas[6]
+        if pressure > 2800:
+            return DetectionResult(fault_class=4, confidence=0.8, step=step)
+
+        return DetectionResult(fault_class=0, confidence=0.9, step=step)
+```
+
+See [examples/fault_detection.py](examples/fault_detection.py) for comprehensive examples.
+
 ### Batch Simulation CLI
 
 The `tep-sim` command runs batch simulations with configurable faults, duration, and output format:
@@ -162,11 +230,15 @@ tep-sim --list-faults
 ```
 tep/
 ├── __init__.py          # Package exports
-├── cli.py               # Batch simulation CLI (tep-sim command)
+├── simulator.py         # High-level TEPSimulator interface
+├── fortran_backend.py   # f2py wrapper for Fortran TEINIT/TEFUNC
 ├── constants.py         # Physical constants, initial states, variable names
 ├── controllers.py       # PI controllers, decentralized control
-├── fortran_backend.py   # f2py wrapper for Fortran TEINIT/TEFUNC
-├── simulator.py         # High-level TEPSimulator interface
+├── controller_base.py   # Controller plugin system base classes
+├── controller_plugins.py # Built-in controller implementations
+├── detector_base.py     # Fault detection system base classes
+├── detector_plugins.py  # Built-in detector implementations (PCA, EWMA, etc.)
+├── cli.py               # Batch simulation CLI (tep-sim command)
 ├── dashboard.py         # Interactive tkinter GUI dashboard
 ├── dashboard_dash.py    # Web-based Dash dashboard (tep-web command)
 └── _fortran/            # Compiled Fortran extension (built during install)
