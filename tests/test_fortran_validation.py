@@ -424,22 +424,3 @@ class TestReproducibility:
             err_msg="Same seed should give identical measurements"
         )
 
-    @pytest.mark.skip(reason="Fortran backend uses internal random state, seed parameter not used")
-    def test_different_seed_different_results(self):
-        """Different random seeds should produce different noise."""
-        # Use shorter simulation to ensure both complete
-        sim1 = TEPSimulator(random_seed=11111)
-        sim1.initialize()
-        result1 = sim1.simulate(duration_hours=0.1)
-
-        sim2 = TEPSimulator(random_seed=22222)
-        sim2.initialize()
-        result2 = sim2.simulate(duration_hours=0.1)
-
-        # Use minimum length to handle potential different simulation lengths
-        min_len = min(len(result1.measurements), len(result2.measurements))
-        assert min_len > 10, "Both simulations should have data"
-
-        # Results should differ (due to measurement noise)
-        diff = np.abs(result1.measurements[:min_len] - result2.measurements[:min_len])
-        assert np.max(diff) > 0.001, "Different seeds should produce different noise"

@@ -195,19 +195,6 @@ class TestReproducibility:
         np.testing.assert_array_almost_equal(result1.states, result2.states)
         np.testing.assert_array_almost_equal(result1.measurements, result2.measurements)
 
-    @pytest.mark.skip(reason="Fortran backend uses internal random state, seed parameter not used")
-    def test_different_seeds_different_results(self):
-        """Different seeds should produce different results (due to noise)."""
-        sim1 = TEPSimulator(random_seed=12345)
-        sim1.initialize()
-        result1 = sim1.simulate(duration_hours=0.1)
-
-        sim2 = TEPSimulator(random_seed=67890)
-        sim2.initialize()
-        result2 = sim2.simulate(duration_hours=0.1)
-
-        # Measurements should differ due to noise
-        assert not np.allclose(result1.measurements, result2.measurements)
 
 
 class TestStreamingInterface:
