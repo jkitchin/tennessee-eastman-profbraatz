@@ -261,6 +261,56 @@ python examples/rieth2017_dataset.py --preset quick --columns xmeas
 python examples/rieth2017_dataset.py --preset quick --columns xmeas_1,xmeas_9,xmv_1
 ```
 
+### Intermittent Fault Mode
+
+Generate trajectories where faults turn on and off, simulating realistic scenarios where faults occur, get fixed, and new faults appear:
+
+```bash
+# Generate 10 trajectories with all 20 faults cycling through
+python examples/rieth2017_dataset.py --intermittent --n-simulations 10
+
+# Custom timing: 3h fault duration, 1.5h normal between faults
+python examples/rieth2017_dataset.py --intermittent --n-simulations 10 \
+    --faults 1,4,6,11 \
+    --fault-duration 3 \
+    --normal-duration 1.5
+
+# Less randomness and keep faults in order
+python examples/rieth2017_dataset.py --intermittent \
+    --duration-variance 0.2 \
+    --no-randomize-order
+```
+
+| Parameter | CLI Flag | Default | Description |
+|-----------|----------|---------|-------------|
+| - | `--intermittent` | - | Enable intermittent fault mode |
+| `avg_fault_duration_hours` | `--fault-duration` | 4.0 | Average hours each fault is active |
+| `avg_normal_duration_hours` | `--normal-duration` | 2.0 | Average hours between faults |
+| `duration_variance` | `--duration-variance` | 0.5 | Variance factor (0.5 = ±50%) |
+| `initial_normal_hours` | `--initial-normal` | 1.0 | Normal operation before first fault |
+| `randomize_fault_order` | `--no-randomize-order` | True | Shuffle fault order in each trajectory |
+
+**Python API:**
+
+```python
+from examples.rieth2017_dataset import Rieth2017DatasetGenerator
+
+generator = Rieth2017DatasetGenerator(output_dir="./data/intermittent")
+
+# Generate trajectories with faults 1-5, each fault ~3h on, ~1.5h off
+data = generator.generate_intermittent_faults(
+    n_simulations=10,
+    fault_numbers=[1, 2, 3, 4, 5],
+    avg_fault_duration_hours=3.0,
+    avg_normal_duration_hours=1.5,
+    duration_variance=0.5,        # ±50% randomness
+    initial_normal_hours=1.0,     # 1h normal at start
+    randomize_fault_order=True,   # Shuffle fault order
+)
+```
+
+**Output format:** The output has the same structure as other datasets (55 columns), but the `faultNumber` column (column 0) changes over time as faults activate and deactivate (0 = normal operation).
+
 ### Configurable Parameters
 
 All simulation parameters can be customized via CLI or Python API:

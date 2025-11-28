@@ -151,6 +151,25 @@ python examples/rieth2017_dataset.py --n-simulations 50 \
 
 Use `--no-validation` to generate only train/test splits (4 files).
 
+**Intermittent fault mode** (faults turn on/off throughout trajectory):
+```bash
+# Generate 10 trajectories with faults cycling on/off
+python examples/rieth2017_dataset.py --intermittent --n-simulations 10
+
+# Custom timing: 3h fault active, 1.5h normal between faults
+python examples/rieth2017_dataset.py --intermittent \
+    --faults 1,4,6,11 --fault-duration 3 --normal-duration 1.5
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--intermittent` | - | Enable intermittent fault mode |
+| `--fault-duration` | 4.0 | Avg hours each fault is active |
+| `--normal-duration` | 2.0 | Avg hours between faults |
+| `--duration-variance` | 0.5 | Randomness factor (±50%) |
+| `--initial-normal` | 1.0 | Normal period before first fault |
+| `--no-randomize-order` | - | Keep faults in numerical order |
+
 **Compare with Harvard Dataverse original:**
 ```bash
 # Download original Rieth 2017 dataset

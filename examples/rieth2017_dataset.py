@@ -590,6 +590,124 @@ def _run_single_simulation(args: tuple) -> Optional[Dict]:
         return None
 
 
+def _run_intermittent_simulation(args: tuple) -> Optional[Dict]:
+    """
+    Run a single simulation with multiple faults turning on and off.
+
+    This creates a trajectory where faults occur intermittently, simulating
+    a more realistic scenario where faults appear, get fixed, and new faults occur.
+
+    Parameters
+    ----------
+    args : tuple
+        (seed, fault_schedule, sampling_interval_min, sim_run)
+        where fault_schedule is a list of (start_time, end_time, fault_number) tuples
+
+    Returns
+    -------
+    dict or None
+        Simulation result with 'sim_run', 'data', 'fault_labels', 'shutdown', or None if failed
+    """
+    seed, fault_schedule, sampling_interval_min, sim_run = args
+
+    if not HAS_TEP:
+        return None
+
+    try:
+        sim = TEPSimulator(random_seed=seed, control_mode=ControlMode.CLOSED_LOOP)
+        sim.initialize()
+
+        # Calculate total duration from schedule
+        if fault_schedule:
+            total_duration = max(end for _, end, _ in fault_schedule)
+        else:
+            total_duration = 1.0  # Default 1 hour if no faults
+
+        # Add a bit of buffer after last fault
+        total_duration += 0.5
+
+        # Convert sampling interval to hours
+        record_interval_hours = sampling_interval_min / 60.0
+
+        # Step size (1 second = 1/3600 hours)
+        dt_hours = 1.0 / 3600.0
+        steps_per_record = max(1, int(record_interval_hours / dt_hours))
+
+        # Prepare data collection
+        measurements_list = []
+        mvs_list = []
+        fault_labels = []
+        times = []
+
+        # Sort schedule by start time
+        schedule = sorted(fault_schedule, key=lambda x: x[0])
+
+        # Track current active fault
+        current_fault = 0
+        schedule_idx = 0
+        active_fault_end = None
+
+        step = 0
+        shutdown = False
+
+        while sim.time < total_duration:
+            current_time = sim.time
+
+            # Check if we need to turn off current fault
+            if active_fault_end is not None and current_time >= active_fault_end:
+                sim.set_disturbance(current_fault, 0)
+                current_fault = 0
+                active_fault_end = None
+
+            # Check if we need to turn on a new fault
+            while schedule_idx < len(schedule):
+                start_time, end_time, fault_num = schedule[schedule_idx]
+                if current_time >= start_time:
+                    # Turn on this fault
+                    if current_fault != 0:
+                        # Turn off previous fault first
+                        sim.set_disturbance(current_fault, 0)
+                    sim.set_disturbance(fault_num, 1)
+                    current_fault = fault_num
+                    active_fault_end = end_time
+                    schedule_idx += 1
+                else:
+                    break
+
+            # Step simulation
+            if not sim.step():
+                shutdown = True
+                break
+
+            # Record data at sampling interval
+            if step % steps_per_record == 0:
+                measurements_list.append(sim.get_measurements().copy())
+                mvs_list.append(sim.get_mvs()[:11].copy())
+                fault_labels.append(current_fault)
+                times.append(current_time)
+
+            step += 1
+
+        if len(measurements_list) == 0:
+            return None
+
+        # Combine measurements and MVs
+        measurements = np.array(measurements_list)
+        mvs = np.array(mvs_list)
+        data = np.hstack([measurements, mvs])
+
+        return {
+            "sim_run": sim_run,
+            "data": data,
+            "fault_labels": np.array(fault_labels),
+            "times": np.array(times),
+            "shutdown": shutdown,
+        }
+
+    except Exception:
+        return None
+
+
 class Rieth2017DatasetGenerator:
     """
     Generate TEP dataset with configurable parameters.
@@ -1375,6 +1493,188 @@ class Rieth2017DatasetGenerator:
 
         return results
 
+    def generate_intermittent_faults(
+        self,
+        n_simulations: int = 10,
+        fault_numbers: Optional[List[int]] = None,
+        avg_fault_duration_hours: float = 4.0,
+        avg_normal_duration_hours: float = 2.0,
+        duration_variance: float = 0.5,
+        initial_normal_hours: float = 1.0,
+        randomize_fault_order: bool = True,
+        save: bool = True,
+        filename: str = "intermittent_faults.npy",
+    ) -> np.ndarray:
+        """
+        Generate trajectories with intermittent faults that turn on and off.
+
+        Each trajectory cycles through all specified faults, with each fault
+        occurring once. Faults turn on for a random duration, then turn off
+        for a period of normal operation before the next fault.
+
+        Parameters
+        ----------
+        n_simulations : int
+            Number of trajectories to generate (default: 10)
+        fault_numbers : list of int, optional
+            Fault numbers to include (default: 1-20). Each fault occurs once per trajectory.
+        avg_fault_duration_hours : float
+            Average time each fault is active (default: 4.0 hours).
+            Actual duration varies by ±duration_variance.
+        avg_normal_duration_hours : float
+            Average normal operation time between faults (default: 2.0 hours).
+            Actual duration varies by ±duration_variance.
+        duration_variance : float
+            Variance factor for duration randomization (default: 0.5 = ±50%).
+            E.g., with avg=4.0 and variance=0.5, durations range from 2.0 to 6.0 hours.
+        initial_normal_hours : float
+            Normal operation time at start before first fault (default: 1.0 hour).
+        randomize_fault_order : bool
+            Whether to shuffle the order of faults (default: True).
+            If False, faults occur in numerical order.
+        save : bool
+            Whether to save to file (default: True)
+        filename : str
+            Output filename (default: "intermittent_faults.npy")
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_simulations * n_samples, 55) where column 0 contains
+            the currently active fault number (0 for normal operation), which
+            changes throughout each trajectory.
+
+        Notes
+        -----
+        Unlike other generation methods where fault_number is constant per simulation,
+        here the fault_number column changes over time as faults activate and deactivate.
+
+        The total simulation duration is computed as:
+            initial_normal + sum(fault_durations) + sum(normal_intervals) + buffer
+
+        Examples
+        --------
+        >>> generator = Rieth2017DatasetGenerator(output_dir="./data")
+        >>> # Generate 10 trajectories with faults 1-5, each fault ~3h on, ~1.5h off
+        >>> data = generator.generate_intermittent_faults(
+        ...     n_simulations=10,
+        ...     fault_numbers=[1, 2, 3, 4, 5],
+        ...     avg_fault_duration_hours=3.0,
+        ...     avg_normal_duration_hours=1.5,
+        ... )
+        """
+        fault_nums = fault_numbers or list(range(1, self.n_faults + 1))
+        n_faults = len(fault_nums)
+
+        print(f"Generating intermittent fault trajectories...")
+        print(f"  Trajectories: {n_simulations}")
+        print(f"  Faults per trajectory: {n_faults} ({fault_nums[:5]}{'...' if n_faults > 5 else ''})")
+        print(f"  Avg fault duration: {avg_fault_duration_hours} hours (±{duration_variance*100:.0f}%)")
+        print(f"  Avg normal duration: {avg_normal_duration_hours} hours (±{duration_variance*100:.0f}%)")
+        print(f"  Initial normal period: {initial_normal_hours} hours")
+        print(f"  Randomize fault order: {randomize_fault_order}")
+        print(f"  Sampling interval: {self.sampling_interval_min} minutes")
+
+        # Calculate expected total duration
+        expected_total = (
+            initial_normal_hours
+            + n_faults * avg_fault_duration_hours
+            + (n_faults - 1) * avg_normal_duration_hours
+            + 0.5  # Buffer
+        )
+        print(f"  Expected duration per trajectory: ~{expected_total:.1f} hours")
+
+        all_arrays = []
+        rng = np.random.default_rng(self.seed_offset + 999999)  # Separate seed space
+
+        sim_args_list = []
+
+        for sim_run in range(1, n_simulations + 1):
+            # Determine fault order
+            if randomize_fault_order:
+                fault_order = rng.permutation(fault_nums).tolist()
+            else:
+                fault_order = list(fault_nums)
+
+            # Generate random schedule
+            schedule = []
+            current_time = initial_normal_hours
+
+            for i, fault_num in enumerate(fault_order):
+                # Random fault duration
+                min_dur = avg_fault_duration_hours * (1 - duration_variance)
+                max_dur = avg_fault_duration_hours * (1 + duration_variance)
+                fault_duration = rng.uniform(min_dur, max_dur)
+
+                start_time = current_time
+                end_time = start_time + fault_duration
+                schedule.append((start_time, end_time, fault_num))
+
+                current_time = end_time
+
+                # Add normal interval (except after last fault)
+                if i < len(fault_order) - 1:
+                    min_normal = avg_normal_duration_hours * (1 - duration_variance)
+                    max_normal = avg_normal_duration_hours * (1 + duration_variance)
+                    normal_duration = rng.uniform(min_normal, max_normal)
+                    current_time += normal_duration
+
+            # Get seed for this simulation
+            seed = self._get_seed(sim_run, split="intermittent", fault_number=0)
+
+            sim_args_list.append((seed, schedule, self.sampling_interval_min, sim_run))
+
+        # Run simulations (sequential for now due to complex schedule)
+        print(f"\nRunning {n_simulations} simulations...")
+
+        results = []
+        if self.n_workers > 1:
+            with ProcessPoolExecutor(max_workers=self.n_workers) as executor:
+                futures = {
+                    executor.submit(_run_intermittent_simulation, args): args[3]
+                    for args in sim_args_list
+                }
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                        print(f"  Completed simulation {result['sim_run']}/{n_simulations}")
+            results.sort(key=lambda x: x["sim_run"])
+        else:
+            for args in sim_args_list:
+                result = _run_intermittent_simulation(args)
+                if result is not None:
+                    results.append(result)
+                    print(f"  Completed simulation {result['sim_run']}/{n_simulations}")
+
+        # Build output array
+        for result in results:
+            sim_run = result["sim_run"]
+            data = result["data"]
+            fault_labels = result["fault_labels"]
+            n_samples = len(data)
+
+            # Create output rows: [fault_number, sim_run, sample, ...features]
+            sim_array = np.zeros((n_samples, 3 + data.shape[1]))
+            sim_array[:, 0] = fault_labels  # Current active fault (changes over time)
+            sim_array[:, 1] = sim_run
+            sim_array[:, 2] = np.arange(1, n_samples + 1)
+            sim_array[:, 3:] = data
+
+            all_arrays.append(sim_array)
+
+        shutdown_count = sum(1 for r in results if r.get("shutdown", False))
+        if shutdown_count > 0:
+            print(f"  Shutdowns: {shutdown_count}/{n_simulations}")
+
+        data_array = np.vstack(all_arrays) if all_arrays else np.zeros((0, 55))
+        print(f"\nTotal rows generated: {len(data_array)}")
+
+        if save:
+            self._save_data(data_array, filename)
+
+        return data_array
+
     def _save_metadata(
         self,
         n_simulations: Optional[int],
@@ -1765,6 +2065,42 @@ def main():
         help="List available column groups and exit",
     )
 
+    # Intermittent fault mode arguments
+    parser.add_argument(
+        "--intermittent",
+        action="store_true",
+        help="Generate intermittent fault trajectories (faults turn on/off)",
+    )
+    parser.add_argument(
+        "--fault-duration",
+        type=float,
+        default=4.0,
+        help="Average fault duration in hours for intermittent mode (default: 4.0)",
+    )
+    parser.add_argument(
+        "--normal-duration",
+        type=float,
+        default=2.0,
+        help="Average normal operation duration between faults in hours (default: 2.0)",
+    )
+    parser.add_argument(
+        "--duration-variance",
+        type=float,
+        default=0.5,
+        help="Variance factor for duration randomization (default: 0.5 = ±50%%)",
+    )
+    parser.add_argument(
+        "--initial-normal",
+        type=float,
+        default=1.0,
+        help="Initial normal operation period in hours (default: 1.0)",
+    )
+    parser.add_argument(
+        "--no-randomize-order",
+        action="store_true",
+        help="Don't randomize fault order in intermittent mode (use numerical order)",
+    )
+
     args = parser.parse_args()
 
     # Handle info commands first
@@ -1798,6 +2134,33 @@ def main():
         example_generate_full()
     elif args.small:
         example_generate_small()
+    elif args.intermittent:
+        # Intermittent fault mode
+        generator_kwargs = {"output_dir": args.output_dir}
+        if args.format:
+            generator_kwargs["output_formats"] = [f.strip() for f in args.format.split(",")]
+        if args.workers != 1:
+            generator_kwargs["n_workers"] = args.workers
+        if args.columns:
+            generator_kwargs["columns"] = args.columns
+        if args.sampling_interval:
+            generator_kwargs["sampling_interval_min"] = args.sampling_interval
+
+        generator = Rieth2017DatasetGenerator(**generator_kwargs)
+
+        fault_numbers = None
+        if args.faults:
+            fault_numbers = [int(f.strip()) for f in args.faults.split(",")]
+
+        generator.generate_intermittent_faults(
+            n_simulations=args.n_simulations or 10,
+            fault_numbers=fault_numbers,
+            avg_fault_duration_hours=args.fault_duration,
+            avg_normal_duration_hours=args.normal_duration,
+            duration_variance=args.duration_variance,
+            initial_normal_hours=args.initial_normal,
+            randomize_fault_order=not args.no_randomize_order,
+        )
     elif args.preset:
         # Use preset
         overrides = {}
@@ -1898,6 +2261,14 @@ def main():
         print("Example with multiple options:")
         print("  python rieth2017_dataset.py --preset quick --format npy,csv \\")
         print("      --columns key --workers 4")
+        print()
+        print("Intermittent fault mode (faults turn on/off):")
+        print("  python rieth2017_dataset.py --intermittent --n-simulations 10")
+        print("  --fault-duration 4       # Avg hours each fault is active")
+        print("  --normal-duration 2      # Avg hours between faults")
+        print("  --duration-variance 0.5  # Randomness (±50%)")
+        print("  --initial-normal 1       # Initial normal period (hours)")
+        print("  --no-randomize-order     # Keep faults in numerical order")
         print()
         print("Compare with original:")
         print("  python rieth2017_dataset.py --download-harvard")
