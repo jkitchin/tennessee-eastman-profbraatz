@@ -1,15 +1,15 @@
-# TEP Interactive Dashboard Guide
+# TEP Web Dashboard Guide
 
-The TEP Dashboard provides a real-time graphical interface for running and monitoring Tennessee Eastman Process simulations.
+The TEP Web Dashboard provides a real-time browser-based interface for running and monitoring Tennessee Eastman Process simulations.
 
 ## Quick Start
 
 ### Installation
 
-Install the GUI dependencies:
+Install the web dashboard dependencies:
 
 ```bash
-pip install -e ".[gui]"
+pip install -e ".[web]"
 ```
 
 ### Launch
@@ -17,7 +17,13 @@ pip install -e ".[gui]"
 From the command line:
 
 ```bash
-tep-dashboard
+tep-web
+```
+
+With options:
+
+```bash
+tep-web --port 8080 --no-browser --host 0.0.0.0
 ```
 
 Or from Python:
@@ -30,31 +36,45 @@ run_dashboard()
 Or directly:
 
 ```python
-from tep.dashboard import TEPDashboard
-app = TEPDashboard()
-app.run()
+from tep.dashboard_dash import run_dashboard
+run_dashboard(port=8050, open_browser=True)
 ```
+
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `--port` | Port number (default: 8050) |
+| `--host` | Host address (default: 127.0.0.1) |
+| `--no-browser` | Don't open browser automatically |
+| `--debug` | Enable Dash debug mode |
 
 ## Interface Overview
 
-The dashboard window is divided into several sections:
+The dashboard is organized into a header, control sidebar, and main plotting area:
 
 ```
-+------------------+------------------------------------------+
-|                  |                                          |
-|   Control Panel  |           Real-Time Plots                |
-|                  |                                          |
-|  - Start/Stop    |   +----------------+------------------+  |
-|  - Reset         |   | Reactor        | Separator        |  |
-|  - Speed         |   +----------------+------------------+  |
-|  - Control Mode  |   | Stripper       | Flows            |  |
-|                  |   +----------------+------------------+  |
-|   MV Sliders     |   | Compositions   | Utilities        |  |
-|                  |   +----------------+------------------+  |
-|   Disturbance    |                                          |
-|   Checkboxes     |                                          |
-|                  |                                          |
-+------------------+------------------------------------------+
++------------------------------------------------------------------+
+|  Tennessee Eastman Process Simulator    [Author: ...]            |
++------------------------------------------------------------------+
+|                    |                                              |
+|  Simulation        |   Real-Time Plots (2x3 grid)                |
+|  [Start] [Stop]    |                                              |
+|  [Reset]           |   +------------------+------------------+    |
+|                    |   | Reactor          | Separator        |    |
+|  Speed: [slider]   |   +------------------+------------------+    |
+|                    |   | Stripper         | Flows            |    |
+|  Record: [toggle]  |   +------------------+------------------+    |
+|  [Download CSV]    |   | Compositions     | Utilities        |    |
+|                    |   +------------------+------------------+    |
+|  Disturbances      |                                              |
+|  [checkboxes 1-20] |                                              |
+|  [Apply] [Clear]   |                                              |
+|  Active: IDV(6)    |                                              |
+|                    |                                              |
+|  Time: 1.5 hours   |                                              |
+|                    |                                              |
++------------------------------------------------------------------+
 ```
 
 ## Control Panel
@@ -63,243 +83,197 @@ The dashboard window is divided into several sections:
 
 | Button | Action |
 |--------|--------|
-| **Start** | Begin simulation (or resume if paused) |
+| **Start** | Begin or resume simulation |
 | **Stop** | Pause simulation |
 | **Reset** | Reset to initial steady-state conditions |
 
 ### Speed Control
 
-The speed slider adjusts simulation speed:
-- **1x**: Real-time (1 simulated second = 1 real second)
-- **10x**: 10x faster
-- **100x**: 100x faster (useful for observing long-term dynamics)
+The speed slider adjusts how fast the simulation runs:
+- **1x**: Slower, detailed observation
+- **10x**: Normal operation
+- **100x**: Fast-forward for long simulations
 
-### Control Mode
+### Data Recording
 
-| Mode | Description |
-|------|-------------|
-| **Closed-loop** | Automatic PI control active. MVs are adjusted automatically to maintain setpoints. |
-| **Manual** | User controls MVs directly via sliders. Automatic control is disabled. |
+| Control | Description |
+|---------|-------------|
+| **Record toggle** | Enable/disable data recording |
+| **Download CSV** | Download recorded data as CSV file |
 
-## Manipulated Variable Sliders
+The CSV includes all 41 measurements, 12 manipulated variables, time, and active disturbances.
 
-When in **Manual** control mode, use the 12 MV sliders to adjust valve positions:
+## Disturbances Panel
 
-| Slider | Variable | Description |
-|--------|----------|-------------|
-| MV 1 | D Feed Flow | Controls stream 2 flow |
-| MV 2 | E Feed Flow | Controls stream 3 flow |
-| MV 3 | A Feed Flow | Controls stream 1 flow |
-| MV 4 | A+C Feed Flow | Controls stream 4 flow |
-| MV 5 | Compressor Recycle | Recycle valve position |
-| MV 6 | Purge Valve | Controls stream 9 purge |
-| MV 7 | Separator Liquid | Controls stream 10 flow |
-| MV 8 | Stripper Product | Controls stream 11 flow |
-| MV 9 | Stripper Steam | Steam valve position |
-| MV 10 | Reactor CW | Reactor cooling water |
-| MV 11 | Condenser CW | Condenser cooling water |
-| MV 12 | Agitator Speed | Reactor agitator |
+### Applying Disturbances
 
-All sliders range from 0% to 100%.
+1. Check the boxes for desired disturbances (IDV 1-20)
+2. Click **Apply Disturbances** to activate them
+3. The "Active" display shows which disturbances are currently enabled in the Fortran simulation
 
-**Note:** In closed-loop mode, sliders show current MV values but adjustments are overridden by the controller.
+### Clearing Disturbances
 
-## Disturbance Checkboxes
+Click **Clear All** to disable all disturbances and return to normal operation.
 
-Enable process disturbances by checking the corresponding boxes:
+### Available Disturbances
 
-### Step Disturbances (IDV 1-7)
-These cause immediate step changes in process conditions:
+#### Step Disturbances (IDV 1-7)
+| IDV | Description |
+|-----|-------------|
+| 1 | A/C feed ratio, B composition constant |
+| 2 | B composition, A/C ratio constant |
+| 3 | D feed temperature step |
+| 4 | Reactor cooling water inlet temperature step |
+| 5 | Condenser cooling water inlet temperature step |
+| 6 | A feed loss (stream 1) |
+| 7 | C header pressure loss |
 
-| Checkbox | Effect |
-|----------|--------|
-| IDV 1 | A/C feed ratio change |
-| IDV 2 | B composition change |
-| IDV 3 | D feed temperature step |
-| IDV 4 | Reactor cooling water temp step |
-| IDV 5 | Condenser cooling water temp step |
-| IDV 6 | A feed loss |
-| IDV 7 | C header pressure loss |
+#### Random Disturbances (IDV 8-12)
+| IDV | Description |
+|-----|-------------|
+| 8 | Random A, B, C feed composition |
+| 9 | Random D feed temperature |
+| 10 | Random C feed temperature |
+| 11 | Random reactor CW inlet temperature |
+| 12 | Random condenser CW inlet temperature |
 
-### Random Disturbances (IDV 8-12)
-These introduce random variations:
+#### Drift and Sticking (IDV 13-15)
+| IDV | Description |
+|-----|-------------|
+| 13 | Slow drift in reaction kinetics |
+| 14 | Reactor cooling water valve sticking |
+| 15 | Condenser cooling water valve sticking |
 
-| Checkbox | Effect |
-|----------|--------|
-| IDV 8 | Random A,B,C feed composition |
-| IDV 9 | Random D feed temperature |
-| IDV 10 | Random C feed temperature |
-| IDV 11 | Random reactor CW inlet temp |
-| IDV 12 | Random condenser CW inlet temp |
-
-### Drift and Sticking (IDV 13-15)
-| Checkbox | Effect |
-|----------|--------|
-| IDV 13 | Slow drift in reaction kinetics |
-| IDV 14 | Reactor cooling water valve sticking |
-| IDV 15 | Condenser cooling water valve sticking |
-
-### Unknown Faults (IDV 16-20)
+#### Unknown Faults (IDV 16-20)
 Reserved for testing fault detection algorithms.
 
 ## Real-Time Plots
 
-The dashboard displays 6 plot panels showing key process variables:
+The dashboard displays 6 plot panels in a 2x3 grid:
 
 ### Reactor Panel
-- **Temperature** (XMEAS 9) - Reactor temperature in °C
-- **Pressure** (XMEAS 7) - Reactor pressure in kPa gauge
-- **Level** (XMEAS 8) - Reactor level in %
+- **Pressure** (XMEAS 7) - kPa gauge
+- **Level** (XMEAS 8) - %
+- **Temperature** (XMEAS 9) - °C
 
 ### Separator Panel
-- **Temperature** (XMEAS 11) - Separator temperature in °C
-- **Pressure** (XMEAS 13) - Separator pressure in kPa gauge
-- **Level** (XMEAS 12) - Separator level in %
+- **Temperature** (XMEAS 11) - °C
+- **Level** (XMEAS 12) - %
+- **Pressure** (XMEAS 13) - kPa gauge
 
 ### Stripper Panel
-- **Temperature** (XMEAS 18) - Stripper temperature in °C
-- **Pressure** (XMEAS 16) - Stripper pressure in kPa gauge
-- **Level** (XMEAS 15) - Stripper level in %
+- **Level** (XMEAS 15) - %
+- **Pressure** (XMEAS 16) - kPa gauge
+- **Temperature** (XMEAS 18) - °C
 
 ### Flows Panel
-- **Feed Rates** - A, D, E feed flows
-- **Recycle** - Recycle flow rate
-- **Product** - Stripper underflow rate
+- **A Feed** (XMEAS 1) - kscmh
+- **D Feed** (XMEAS 2) - kg/hr
+- **E Feed** (XMEAS 3) - kg/hr
+- **Recycle** (XMEAS 5) - kscmh
 
 ### Compositions Panel
-- **Reactor Feed** - Components in reactor feed stream
-- **Product** - Product stream composition
+- **Reactor Feed A** (XMEAS 23) - mol%
+- **Product G** (XMEAS 40) - mol%
+- **Product H** (XMEAS 41) - mol%
 
 ### Utilities Panel
-- **Compressor Work** (XMEAS 20) - in kW
-- **Cooling Water Temps** - Reactor and separator CW outlet temperatures
+- **Compressor Work** (XMEAS 20) - kW
+- **Reactor CW Temp** (XMEAS 21) - °C
+- **Separator CW Temp** (XMEAS 22) - °C
 
-## Status Bar
+## Status Display
 
-The bottom of the window shows:
-- **Simulation Time**: Current time in hours and minutes
-- **Status**: Running, Stopped, or SHUTDOWN
-- **Step Count**: Number of simulation steps completed
-
-## Safety Shutdown
-
-The process will shut down automatically if safety limits are exceeded:
-- Reactor pressure too high/low
-- Reactor level too high/low
-- Reactor temperature too high
-- Separator level too high/low
-- Stripper level too high
-
-When shutdown occurs:
-1. The status shows "SHUTDOWN" in red
-2. Simulation pauses
-3. Click **Reset** to restart from steady state
+The sidebar shows:
+- **Simulation Time**: Current time in hours
+- **Active Disturbances**: Currently enabled IDVs from Fortran state
 
 ## Tips for Effective Use
 
 ### Observing Normal Operation
-1. Start with closed-loop control
-2. Watch the system reach steady state (~5-10 minutes)
+1. Start the simulation without any disturbances
+2. Watch the system reach steady state (~5-10 minutes simulated time)
 3. Note nominal values for key variables
 
-### Testing Controller Response
-1. Use closed-loop mode
-2. Apply a step disturbance (IDV 1-7)
-3. Observe how the controllers respond
-4. Watch MVs adjust to maintain setpoints
+### Testing Fault Signatures
+1. Run at steady state for 1+ hour
+2. Check a disturbance (e.g., IDV 6)
+3. Click **Apply Disturbances**
+4. Observe the characteristic fault signature
+5. Enable recording to capture data for analysis
 
-### Exploring Manual Control
-1. Switch to Manual mode
-2. Start from steady state
-3. Make small changes to one MV at a time
-4. Observe the process response
-5. Try to maintain stable operation manually
+### Generating Training Data
+1. Start recording
+2. Run normal operation for desired duration
+3. Apply a fault at a known time
+4. Continue simulation
+5. Download CSV for offline analysis
 
-### Fault Detection Studies
-1. Run in closed-loop at steady state
-2. Enable a fault (e.g., IDV 13 for slow drift)
-3. Watch for subtle changes in measurements
-4. Test if the fault is detectable
-
-### Comparing Control Strategies
-1. Run simulation and note performance
-2. Reset and try different manual settings
-3. Compare closed-loop vs manual response to disturbances
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| Space | Start/Stop toggle |
-| R | Reset simulation |
-| Q | Quit application |
+### Comparing Fault Types
+1. Reset and run with IDV(4) - cooling water fault
+2. Note pressure rise characteristic
+3. Reset and run with IDV(6) - A feed loss
+4. Compare the different fault signatures
 
 ## Troubleshooting
 
 ### Dashboard Won't Start
 
-**Error: No module named 'tkinter'**
+**Error: No module named 'dash'**
 
-Install tkinter:
+Install web dependencies:
 ```bash
-# Ubuntu/Debian
-sudo apt-get install python3-tk
-
-# Fedora
-sudo dnf install python3-tkinter
-
-# macOS (usually included)
-# Windows (usually included)
+pip install -e ".[web]"
 ```
 
-**Error: No module named 'matplotlib'**
+### Port Already in Use
 
-Install with GUI extras:
+Use a different port:
 ```bash
-pip install -e ".[gui]"
+tep-web --port 8051
 ```
+
+### Browser Doesn't Open
+
+Open manually at `http://127.0.0.1:8050` or use:
+```bash
+tep-web --no-browser
+```
+Then open the URL in your browser.
 
 ### Plots Not Updating
 
 - Ensure simulation is running (click Start)
-- Check that speed is > 0
-- Try resetting the simulation
+- Check browser console for errors
+- Try refreshing the page
 
-### Process Keeps Shutting Down
+### Process Shuts Down
 
-The process may be unstable due to:
-- Extreme MV settings in manual mode
-- Multiple simultaneous disturbances
-- Aggressive control tuning
+The simulation may shut down if safety limits are exceeded:
+- Reactor pressure > 3000 kPa or < 2500 kPa
+- Reactor level > 100% or < 2%
+- Reactor temperature > 175°C
 
 Try:
-1. Reset to steady state
-2. Use closed-loop control
-3. Apply disturbances one at a time
+1. Click Reset to return to steady state
+2. Apply disturbances one at a time
+3. Some disturbances (like IDV 6) will cause shutdown - this is expected behavior
 
-## Programmatic Dashboard Control
+## Data Export Format
 
-For advanced users, you can programmatically control the dashboard:
+The CSV export includes columns:
 
-```python
-from tep.dashboard import TEPDashboard
+| Column | Description |
+|--------|-------------|
+| Time_hours | Simulation time |
+| XMEAS_1 through XMEAS_41 | All measurements |
+| XMV_1 through XMV_12 | Manipulated variables |
+| Active_IDVs | Comma-separated list of active disturbances |
 
-app = TEPDashboard()
-
-# Pre-configure settings before running
-app.simulator.set_disturbance(1, 1)  # Enable IDV(1)
-
-# Custom initialization
-app.run()
+Example:
+```csv
+Time_hours,XMEAS_1,XMEAS_2,...,XMV_1,...,Active_IDVs
+0.0,0.251,3664.0,...,63.05,...,
+0.5,0.250,3662.1,...,63.10,...,
+1.0,0.002,3660.5,...,63.15,...,6
 ```
-
-## Screenshots
-
-### Normal Operation
-The dashboard at steady state with closed-loop control shows stable reactor temperature around 120°C, separator and stripper levels near 50%, and stable flow rates.
-
-### Disturbance Response
-When IDV(1) is applied, you'll see the controllers adjust feed flows and other MVs to maintain setpoints while the process reaches a new steady state.
-
-### Manual Control
-In manual mode, the operator must actively adjust MVs to maintain process stability. Without automatic control, the process will drift from setpoints.

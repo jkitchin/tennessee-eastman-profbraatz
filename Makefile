@@ -1,7 +1,7 @@
 # Makefile for Tennessee Eastman Process Python Simulator
 # Usage: make [target]
 
-.PHONY: help install install-dev install-gui test test-verbose test-coverage \
+.PHONY: help install install-dev install-web test test-verbose test-coverage \
         lint format dashboard run-example clean clean-pyc clean-build \
         docs build publish backend-info backend-test
 
@@ -12,7 +12,7 @@ help:
 	@echo "  Installation:"
 	@echo "    install        Install the package (requires Fortran compiler)"
 	@echo "    install-dev    Install with development dependencies"
-	@echo "    install-gui    Install with GUI dashboard support"
+	@echo "    install-web    Install with web dashboard support"
 	@echo "    install-all    Install with all optional dependencies"
 	@echo ""
 	@echo "  Testing:"
@@ -27,7 +27,7 @@ help:
 	@echo "    typecheck      Run type checking (mypy)"
 	@echo ""
 	@echo "  Running:"
-	@echo "    dashboard      Launch the interactive GUI dashboard"
+	@echo "    dashboard      Launch the web dashboard (tep-web)"
 	@echo "    run-example    Run basic simulation example"
 	@echo "    run-examples   Run all examples"
 	@echo ""
@@ -55,11 +55,11 @@ install:
 install-dev:
 	pip install ".[dev]"
 
-install-gui:
-	pip install ".[gui]"
+install-web:
+	pip install ".[web]"
 
 install-all:
-	pip install ".[dev,gui]"
+	pip install ".[dev,web,plot]"
 
 # ============================================================================
 # Testing targets
@@ -81,12 +81,6 @@ test-fast:
 # Run specific test file
 test-constants:
 	python -m pytest tests/test_constants.py -v
-
-test-thermo:
-	python -m pytest tests/test_thermodynamics.py -v
-
-test-disturbances:
-	python -m pytest tests/test_disturbances.py -v
 
 test-controllers:
 	python -m pytest tests/test_controllers.py -v
@@ -119,13 +113,9 @@ typecheck:
 # ============================================================================
 
 dashboard:
-	@echo "Launching TEP Dashboard..."
-	@echo "(Requires GUI dependencies: make install-gui)"
-	python -c "from tep import run_dashboard; run_dashboard()"
-
-# Alternative dashboard launch
-dashboard-script:
-	tep-dashboard
+	@echo "Launching TEP Web Dashboard..."
+	@echo "(Requires web dependencies: make install-web)"
+	tep-web
 
 run-example:
 	@echo "Running basic simulation example..."
@@ -213,22 +203,20 @@ info:
 # Check if all imports work
 check-imports:
 	@echo "Checking package imports..."
-	python -c "from tep import TEPSimulator, TEProcess"
-	python -c "from tep.simulator import ControlMode"
-	python -c "from tep.controllers import PIController, DecentralizedController"
-	python -c "from tep.thermodynamics import calculate_enthalpy, calculate_temperature"
-	python -c "from tep.disturbances import DisturbanceManager, RandomGenerator"
-	python -c "from tep.integrators import Integrator, IntegratorType"
+	cd /tmp && python -c "from tep import TEPSimulator, ControlMode"
+	cd /tmp && python -c "from tep.controllers import PIController, DecentralizedController"
+	cd /tmp && python -c "from tep.fortran_backend import FortranTEProcess"
+	cd /tmp && python -c "from tep.detector_base import BaseFaultDetector, FaultDetectorRegistry"
+	cd /tmp && python -c "from tep.controller_base import BaseController, ControllerRegistry"
 	@echo "All imports successful!"
 
 # Interactive Python with TEP pre-imported
 shell:
-	python -i -c "\
-from tep import TEPSimulator, TEProcess; \
-from tep.simulator import ControlMode; \
+	cd /tmp && python -i -c "\
+from tep import TEPSimulator, ControlMode; \
 from tep.controllers import PIController, DecentralizedController; \
 import numpy as np; \
-print('TEP Simulator loaded. Available: TEPSimulator, TEProcess, ControlMode, PIController, np')"
+print('TEP Simulator loaded. Available: TEPSimulator, ControlMode, PIController, np')"
 
 # ============================================================================
 # Documentation targets
