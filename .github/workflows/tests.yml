@@ -38,6 +38,7 @@ jobs:
 
     - name: Run tests
       run: |
-        # Copy tests to /tmp to avoid source tree tep/ shadowing installed package
+        # Copy tests and examples to /tmp to avoid source tree tep/ shadowing installed package
         cp -r tests /tmp/tests
+        cp -r examples /tmp/examples
         cd /tmp && pytest tests/ -v --tb=short
