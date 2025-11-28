@@ -25,7 +25,7 @@ References:
     Detection and Diagnosis in Chemical Processes, Springer-Verlag, London, 2000.
 """
 
-from .simulator import TEPSimulator
+from .simulator import TEPSimulator, ControlMode
 from .fortran_backend import FortranTEProcess
 from .controllers import PIController, DecentralizedController, ManualController
 from .controller_base import (
@@ -79,6 +79,7 @@ def get_default_backend():
 __all__ = [
     # Simulator
     "TEPSimulator",
+    "ControlMode",
     "FortranTEProcess",
     # Controllers
     "PIController",
