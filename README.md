@@ -106,71 +106,157 @@ The web dashboard provides:
 - Manual valve manipulation
 - Data export to CSV
 
-### Fault Detection
+### Fault Detection Framework
 
-The simulator includes a pluggable fault detection system with built-in detectors and support for custom implementations:
+The simulator includes a comprehensive fault detection framework with:
+- **Built-in detectors** ranging from simple threshold checks to PCA-based multivariate methods
+- **Plugin system** for registering custom detectors via `@register_detector` decorator
+- **Performance metrics** (accuracy, F1, detection delay) tracked automatically
+- **Sliding window management** handled by the framework
+- **Async detection** option for computationally intensive methods
+
+#### Basic Usage
 
 ```python
 from tep import TEPSimulator, FaultDetectorRegistry
 
-# Create simulator
+# Create simulator and detector
 sim = TEPSimulator()
-
-# Add a detector
 detector = FaultDetectorRegistry.create("pca", window_size=200)
-sim.add_detector(detector)
 
 # Run simulation with fault injection
 sim.initialize()
-sim.set_ground_truth(0)  # Normal operation
-
 result = sim.simulate(
     duration_hours=2.0,
-    disturbances={4: (1.0, 1)}  # Fault at t=1 hour
+    disturbances={4: (1.0, 1)}  # Cooling water fault at t=1 hour
 )
 
-# Check detector performance
-print(detector.metrics)
-# DetectionMetrics (7200 samples, 0 unknown)
+# Run detection on results
+for i, xmeas in enumerate(result.measurements):
+    detection = detector.process(xmeas, i)
+    if detection.is_fault:
+        print(f"Step {i}: Fault detected (class={detection.fault_class}, conf={detection.confidence:.2f})")
+```
+
+#### Built-in Detectors
+
+| Detector | Description | Key Parameters |
+|----------|-------------|----------------|
+| `threshold` | Fast safety limit checking | `limits`, `fault_mapping` |
+| `ewma` | Exponentially weighted moving average | `alpha=0.1`, `threshold=3.0` |
+| `cusum` | Cumulative sum control chart | `k=0.5`, `h=5.0` |
+| `pca` | PCA with T² and SPE statistics | `n_components=10`, `t2_threshold`, `spe_threshold` |
+| `statistical` | Multi-statistic ensemble (mean, variance, trend) | `votes_required=2` |
+| `sliding_window` | Window half comparison | `threshold=3.0` |
+| `composite` | Combines multiple detectors with voting | `min_votes=2` |
+
+#### Detection Results
+
+Each detector returns a `DetectionResult` with:
+
+```python
+result = detector.process(xmeas, step)
+
+result.fault_class      # -1=unknown, 0=normal, 1-20=fault IDV index
+result.confidence       # 0.0 to 1.0
+result.is_fault         # True if fault_class > 0
+result.is_normal        # True if fault_class == 0
+result.is_ready         # True if detector has enough data
+result.contributing_sensors  # List of XMEAS indices driving detection
+result.statistics       # Detector-specific stats (e.g., T², SPE values)
+```
+
+#### Performance Metrics
+
+Detectors automatically track performance metrics when ground truth is set:
+
+```python
+detector.set_ground_truth(fault_class=4, onset_step=3600)  # IDV(4) at t=1hr
+
+# After running detection...
+metrics = detector.metrics
+print(metrics)
+# DetectionMetrics (7200 samples, 100 unknown)
 #   Accuracy:             0.856
 #   Fault Detection Rate: 0.923
 #   False Alarm Rate:     0.034
+#   Missed Detection:     0.077
+#   Macro F1:             0.812
+
+# Per-class metrics
+print(metrics.precision(4))  # Precision for IDV(4)
+print(metrics.recall(4))     # Recall for IDV(4)
+print(metrics.mean_detection_delay(4))  # Steps to first correct detection
 ```
 
-**Built-in Detectors:**
-
-| Detector | Description | Window |
-|----------|-------------|--------|
-| `threshold` | Safety limit checking | None |
-| `ewma` | Exponentially weighted moving average | Stateful |
-| `cusum` | Cumulative sum control chart | 100 pts |
-| `pca` | Principal Component Analysis (T², SPE) | 200 pts |
-| `statistical` | Multi-statistic ensemble | 120 pts |
-| `sliding_window` | Window comparison | 60 pts |
-
-**Custom Detector Example:**
+#### Custom Detector Example
 
 ```python
 from tep import BaseFaultDetector, DetectionResult, register_detector
+import numpy as np
 
-@register_detector(name="my_detector")
-class MyDetector(BaseFaultDetector):
-    window_size = 100
-    detect_interval = 10  # Run every 10 steps
+@register_detector(name="pressure_monitor")
+class PressureMonitor(BaseFaultDetector):
+    """Monitors reactor pressure for cooling water faults."""
+
+    name = "pressure_monitor"
+    window_size = 60        # 60 seconds of history
+    detect_interval = 10    # Run every 10 steps
+
+    def __init__(self, pressure_threshold=2750, **kwargs):
+        super().__init__(**kwargs)
+        self.pressure_threshold = pressure_threshold
 
     def detect(self, xmeas, step):
         if not self.window_ready:
             return DetectionResult(-1, 0.0, step)
 
-        # Your detection logic using self.window
-        pressure = xmeas[6]
-        if pressure > 2800:
-            return DetectionResult(fault_class=4, confidence=0.8, step=step)
+        # Analyze pressure trend
+        pressures = self.window[:, 6]  # XMEAS(7) = reactor pressure
+        mean_pressure = np.mean(pressures)
+        trend = pressures[-1] - pressures[0]
+
+        if mean_pressure > self.pressure_threshold and trend > 50:
+            return DetectionResult(
+                fault_class=4,  # IDV(4) cooling water fault
+                confidence=min(0.5 + (mean_pressure - self.pressure_threshold) / 200, 0.95),
+                step=step,
+                contributing_sensors=[6],  # Pressure sensor
+                statistics={"mean_pressure": mean_pressure, "trend": trend}
+            )
 
         return DetectionResult(fault_class=0, confidence=0.9, step=step)
+
+    def _reset_impl(self):
+        pass  # Reset custom state if needed
+
+# Use your custom detector
+detector = FaultDetectorRegistry.create("pressure_monitor", pressure_threshold=2800)
 ```
 
-See [examples/fault_detection.py](examples/fault_detection.py) for comprehensive examples.
+#### Composite Detector (Ensemble)
+
+Combine multiple detectors with voting:
+
+```python
+from tep import FaultDetectorRegistry
+
+# Create individual detectors
+threshold = FaultDetectorRegistry.create("threshold")
+pca = FaultDetectorRegistry.create("pca", window_size=200)
+ewma = FaultDetectorRegistry.create("ewma", alpha=0.1)
+
+# Create composite with majority voting
+composite = FaultDetectorRegistry.create("composite", min_votes=2)
+composite.add_detector(threshold)
+composite.add_detector(pca)
+composite.add_detector(ewma)
+
+# Use like any other detector
+result = composite.process(xmeas, step)
+```
+
+See [examples/fault_detection.py](examples/fault_detection.py) for comprehensive examples including training PCA on normal data and evaluating detection performance.
 
 ### Batch Simulation CLI
 
