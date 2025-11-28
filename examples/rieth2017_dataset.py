@@ -708,6 +708,137 @@ def _run_intermittent_simulation(args: tuple) -> Optional[Dict]:
         return None
 
 
+def _run_overlapping_simulation(args: tuple) -> Optional[Dict]:
+    """
+    Run a single simulation with multiple faults that can overlap.
+
+    This creates a trajectory where multiple faults can be active simultaneously,
+    simulating scenarios where multiple issues occur at the same time.
+
+    Parameters
+    ----------
+    args : tuple
+        (seed, fault_schedule, sampling_interval_min, sim_run, max_concurrent)
+        where fault_schedule is a list of (start_time, end_time, fault_number) tuples
+
+    Returns
+    -------
+    dict or None
+        Simulation result with 'sim_run', 'data', 'fault_labels', 'shutdown', or None if failed
+
+    Notes
+    -----
+    When multiple faults are active, fault_labels encodes them as:
+    - Single fault: fault number (1-20)
+    - Two faults: fault1 * 100 + fault2 where fault1 < fault2 (e.g., faults 1,4 = 104)
+    """
+    seed, fault_schedule, sampling_interval_min, sim_run, max_concurrent = args
+
+    if not HAS_TEP:
+        return None
+
+    try:
+        sim = TEPSimulator(random_seed=seed, control_mode=ControlMode.CLOSED_LOOP)
+        sim.initialize()
+
+        # Calculate total duration from schedule
+        if fault_schedule:
+            total_duration = max(end for _, end, _ in fault_schedule)
+        else:
+            total_duration = 1.0
+
+        # Add buffer after last fault
+        total_duration += 0.5
+
+        # Convert sampling interval to hours
+        record_interval_hours = sampling_interval_min / 60.0
+
+        # Step size (1 second = 1/3600 hours)
+        dt_hours = 1.0 / 3600.0
+        steps_per_record = max(1, int(record_interval_hours / dt_hours))
+
+        # Prepare data collection
+        measurements_list = []
+        mvs_list = []
+        fault_labels = []
+        times = []
+
+        # Track currently active faults as a set
+        active_faults = set()
+
+        # Create event list: (time, 'on'/'off', fault_number)
+        events = []
+        for start_time, end_time, fault_num in fault_schedule:
+            events.append((start_time, 'on', fault_num))
+            events.append((end_time, 'off', fault_num))
+        events.sort(key=lambda x: (x[0], x[1] == 'on'))  # Process 'off' before 'on' at same time
+
+        event_idx = 0
+        step = 0
+        shutdown = False
+
+        while sim.time < total_duration:
+            current_time = sim.time
+
+            # Process all events at or before current time
+            while event_idx < len(events) and events[event_idx][0] <= current_time:
+                event_time, event_type, fault_num = events[event_idx]
+                if event_type == 'on':
+                    # Only activate if we haven't exceeded max concurrent
+                    if len(active_faults) < max_concurrent:
+                        sim.set_disturbance(fault_num, 1)
+                        active_faults.add(fault_num)
+                else:  # 'off'
+                    if fault_num in active_faults:
+                        sim.set_disturbance(fault_num, 0)
+                        active_faults.discard(fault_num)
+                event_idx += 1
+
+            # Step simulation
+            if not sim.step():
+                shutdown = True
+                break
+
+            # Record data at sampling interval
+            if step % steps_per_record == 0:
+                measurements_list.append(sim.get_measurements().copy())
+                mvs_list.append(sim.get_mvs()[:11].copy())
+
+                # Encode active faults
+                if len(active_faults) == 0:
+                    fault_label = 0
+                elif len(active_faults) == 1:
+                    fault_label = list(active_faults)[0]
+                else:
+                    # Multiple faults: encode as fault1 * 100 + fault2 (sorted)
+                    sorted_faults = sorted(active_faults)
+                    fault_label = sorted_faults[0] * 100 + sorted_faults[1]
+
+                fault_labels.append(fault_label)
+                times.append(current_time)
+
+            step += 1
+
+        if len(measurements_list) == 0:
+            return None
+
+        # Combine measurements and MVs
+        measurements = np.array(measurements_list)
+        mvs = np.array(mvs_list)
+        data = np.hstack([measurements, mvs])
+
+        return {
+            "sim_run": sim_run,
+            "data": data,
+            "fault_labels": np.array(fault_labels),
+            "times": np.array(times),
+            "shutdown": shutdown,
+        }
+
+    except Exception:
+        return None
+
+
 class Rieth2017DatasetGenerator:
     """
     Generate TEP dataset with configurable parameters.
@@ -1675,6 +1806,203 @@ class Rieth2017DatasetGenerator:
 
         return data_array
 
+    def generate_overlapping_faults(
+        self,
+        n_simulations: int = 10,
+        fault_numbers: Optional[List[int]] = None,
+        avg_fault_duration_hours: float = 4.0,
+        avg_gap_hours: float = 1.0,
+        overlap_probability: float = 0.5,
+        duration_variance: float = 0.5,
+        initial_normal_hours: float = 1.0,
+        max_concurrent_faults: int = 2,
+        randomize_fault_order: bool = True,
+        save: bool = True,
+        filename: str = "overlapping_faults.npy",
+    ) -> np.ndarray:
+        """
+        Generate trajectories with overlapping faults (up to 2 active at once).
+
+        Similar to generate_intermittent_faults, but allows multiple faults to be
+        active simultaneously, simulating scenarios where multiple issues occur
+        at the same time before being resolved.
+
+        Parameters
+        ----------
+        n_simulations : int
+            Number of trajectories to generate (default: 10)
+        fault_numbers : list of int, optional
+            Fault numbers to include (default: 1-20). Each fault occurs once per trajectory.
+        avg_fault_duration_hours : float
+            Average time each fault is active (default: 4.0 hours).
+        avg_gap_hours : float
+            Average gap between fault start times when not overlapping (default: 1.0 hours).
+            Shorter gaps increase the chance of natural overlaps.
+        overlap_probability : float
+            Probability that the next fault starts while the previous is still active
+            (default: 0.5 = 50% chance of overlap).
+        duration_variance : float
+            Variance factor for duration randomization (default: 0.5 = ±50%).
+        initial_normal_hours : float
+            Normal operation time at start before first fault (default: 1.0 hour).
+        max_concurrent_faults : int
+            Maximum number of faults that can be active simultaneously (default: 2).
+        randomize_fault_order : bool
+            Whether to shuffle the order of faults (default: True).
+        save : bool
+            Whether to save to file (default: True)
+        filename : str
+            Output filename (default: "overlapping_faults.npy")
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_simulations * n_samples, 55) where column 0 contains
+            the currently active fault(s) encoded as:
+            - 0: Normal operation
+            - 1-20: Single fault active
+            - 101-2020: Two faults active (encoded as fault1*100 + fault2, sorted)
+
+        Examples
+        --------
+        >>> generator = Rieth2017DatasetGenerator(output_dir="./data")
+        >>> # Generate 10 trajectories with faults 1-5, allowing overlaps
+        >>> data = generator.generate_overlapping_faults(
+        ...     n_simulations=10,
+        ...     fault_numbers=[1, 2, 3, 4, 5],
+        ...     overlap_probability=0.6,  # 60% chance of overlap
+        ... )
+        """
+        fault_nums = fault_numbers or list(range(1, self.n_faults + 1))
+        n_faults = len(fault_nums)
+
+        print(f"Generating overlapping fault trajectories...")
+        print(f"  Trajectories: {n_simulations}")
+        print(f"  Faults per trajectory: {n_faults} ({fault_nums[:5]}{'...' if n_faults > 5 else ''})")
+        print(f"  Avg fault duration: {avg_fault_duration_hours} hours (±{duration_variance*100:.0f}%)")
+        print(f"  Avg gap between faults: {avg_gap_hours} hours")
+        print(f"  Overlap probability: {overlap_probability*100:.0f}%")
+        print(f"  Max concurrent faults: {max_concurrent_faults}")
+        print(f"  Initial normal period: {initial_normal_hours} hours")
+        print(f"  Randomize fault order: {randomize_fault_order}")
+        print(f"  Sampling interval: {self.sampling_interval_min} minutes")
+
+        all_arrays = []
+        rng = np.random.default_rng(self.seed_offset + 888888)  # Separate seed space
+
+        sim_args_list = []
+
+        for sim_run in range(1, n_simulations + 1):
+            # Determine fault order
+            if randomize_fault_order:
+                fault_order = rng.permutation(fault_nums).tolist()
+            else:
+                fault_order = list(fault_nums)
+
+            # Generate schedule with potential overlaps
+            schedule = []
+            current_time = initial_normal_hours
+            prev_end_time = initial_normal_hours
+
+            for i, fault_num in enumerate(fault_order):
+                # Random fault duration
+                min_dur = avg_fault_duration_hours * (1 - duration_variance)
+                max_dur = avg_fault_duration_hours * (1 + duration_variance)
+                fault_duration = rng.uniform(min_dur, max_dur)
+
+                # Determine start time
+                if i == 0:
+                    # First fault starts after initial normal period
+                    start_time = current_time
+                else:
+                    # Decide if this fault overlaps with previous
+                    if rng.random() < overlap_probability and prev_end_time > current_time:
+                        # Start during the previous fault (overlap)
+                        # Random point during the remaining duration of previous fault
+                        overlap_start = current_time
+                        overlap_end = prev_end_time
+                        start_time = rng.uniform(overlap_start, overlap_end)
+                    else:
+                        # Start after a gap
+                        min_gap = avg_gap_hours * (1 - duration_variance)
+                        max_gap = avg_gap_hours * (1 + duration_variance)
+                        gap = rng.uniform(max(0.1, min_gap), max_gap)
+                        start_time = max(current_time, prev_end_time) + gap
+
+                end_time = start_time + fault_duration
+                schedule.append((start_time, end_time, fault_num))
+
+                # Update tracking
+                current_time = start_time
+                prev_end_time = max(prev_end_time, end_time)
+
+            # Get seed for this simulation
+            seed = self._get_seed(sim_run, split="overlapping", fault_number=0)
+
+            sim_args_list.append((
+                seed, schedule, self.sampling_interval_min, sim_run, max_concurrent_faults
+            ))
+
+        # Run simulations
+        print(f"\nRunning {n_simulations} simulations...")
+
+        results = []
+        if self.n_workers > 1:
+            with ProcessPoolExecutor(max_workers=self.n_workers) as executor:
+                futures = {
+                    executor.submit(_run_overlapping_simulation, args): args[3]
+                    for args in sim_args_list
+                }
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                        print(f"  Completed simulation {result['sim_run']}/{n_simulations}")
+            results.sort(key=lambda x: x["sim_run"])
+        else:
+            for args in sim_args_list:
+                result = _run_overlapping_simulation(args)
+                if result is not None:
+                    results.append(result)
+                    print(f"  Completed simulation {result['sim_run']}/{n_simulations}")
+
+        # Build output array
+        for result in results:
+            sim_run = result["sim_run"]
+            data = result["data"]
+            fault_labels = result["fault_labels"]
+            n_samples = len(data)
+
+            # Create output rows: [fault_number, sim_run, sample, ...features]
+            sim_array = np.zeros((n_samples, 3 + data.shape[1]))
+            sim_array[:, 0] = fault_labels  # Encoded fault(s) - changes over time
+            sim_array[:, 1] = sim_run
+            sim_array[:, 2] = np.arange(1, n_samples + 1)
+            sim_array[:, 3:] = data
+
+            all_arrays.append(sim_array)
+
+        shutdown_count = sum(1 for r in results if r.get("shutdown", False))
+        if shutdown_count > 0:
+            print(f"  Shutdowns: {shutdown_count}/{n_simulations}")
+
+        data_array = np.vstack(all_arrays) if all_arrays else np.zeros((0, 55))
+        print(f"\nTotal rows generated: {len(data_array)}")
+
+        # Report overlap statistics
+        if results:
+            overlap_samples = sum(
+                np.sum(r["fault_labels"] > 100) for r in results
+            )
+            total_samples = sum(len(r["fault_labels"]) for r in results)
+            overlap_pct = 100 * overlap_samples / total_samples if total_samples > 0 else 0
+            print(f"  Samples with overlapping faults: {overlap_samples} ({overlap_pct:.1f}%)")
+
+        if save:
+            self._save_data(data_array, filename)
+
+        return data_array
+
     def _save_metadata(
         self,
         n_simulations: Optional[int],
@@ -2098,7 +2426,32 @@ def main():
     parser.add_argument(
         "--no-randomize-order",
         action="store_true",
-        help="Don't randomize fault order in intermittent mode (use numerical order)",
+        help="Don't randomize fault order in intermittent/overlapping mode (use numerical order)",
+    )
+
+    # Overlapping fault mode arguments
+    parser.add_argument(
+        "--overlapping",
+        action="store_true",
+        help="Generate overlapping fault trajectories (multiple faults can be active at once)",
+    )
+    parser.add_argument(
+        "--overlap-probability",
+        type=float,
+        default=0.5,
+        help="Probability that next fault starts while previous is active (default: 0.5 = 50%%)",
+    )
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=2,
+        help="Maximum concurrent faults in overlapping mode (default: 2)",
+    )
+    parser.add_argument(
+        "--gap-hours",
+        type=float,
+        default=1.0,
+        help="Average gap between faults when not overlapping (default: 1.0)",
     )
 
     args = parser.parse_args()
@@ -2159,6 +2512,35 @@ def main():
             avg_normal_duration_hours=args.normal_duration,
             duration_variance=args.duration_variance,
             initial_normal_hours=args.initial_normal,
+            randomize_fault_order=not args.no_randomize_order,
+        )
+    elif args.overlapping:
+        # Overlapping fault mode
+        generator_kwargs = {"output_dir": args.output_dir}
+        if args.format:
+            generator_kwargs["output_formats"] = [f.strip() for f in args.format.split(",")]
+        if args.workers != 1:
+            generator_kwargs["n_workers"] = args.workers
+        if args.columns:
+            generator_kwargs["columns"] = args.columns
+        if args.sampling_interval:
+            generator_kwargs["sampling_interval_min"] = args.sampling_interval
+
+        generator = Rieth2017DatasetGenerator(**generator_kwargs)
+
+        fault_numbers = None
+        if args.faults:
+            fault_numbers = [int(f.strip()) for f in args.faults.split(",")]
+
+        generator.generate_overlapping_faults(
+            n_simulations=args.n_simulations or 10,
+            fault_numbers=fault_numbers,
+            avg_fault_duration_hours=args.fault_duration,
+            avg_gap_hours=args.gap_hours,
+            overlap_probability=args.overlap_probability,
+            duration_variance=args.duration_variance,
+            initial_normal_hours=args.initial_normal,
+            max_concurrent_faults=args.max_concurrent,
             randomize_fault_order=not args.no_randomize_order,
         )
     elif args.preset:
@@ -2269,6 +2651,12 @@ def main():
         print("  --duration-variance 0.5  # Randomness (±50%)")
         print("  --initial-normal 1       # Initial normal period (hours)")
         print("  --no-randomize-order     # Keep faults in numerical order")
+        print()
+        print("Overlapping fault mode (multiple faults at once):")
+        print("  python rieth2017_dataset.py --overlapping --n-simulations 10")
+        print("  --overlap-probability 0.5  # Chance of overlap (50%)")
+        print("  --max-concurrent 2         # Max simultaneous faults")
+        print("  --gap-hours 1              # Avg gap when not overlapping")
         print()
         print("Compare with original:")
         print("  python rieth2017_dataset.py --download-harvard")

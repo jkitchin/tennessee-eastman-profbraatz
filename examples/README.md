@@ -170,6 +170,25 @@ python examples/rieth2017_dataset.py --intermittent \
 | `--initial-normal` | 1.0 | Normal period before first fault |
 | `--no-randomize-order` | - | Keep faults in numerical order |
 
+**Overlapping fault mode** (multiple faults active at once):
+```bash
+# Generate 10 trajectories with up to 2 concurrent faults
+python examples/rieth2017_dataset.py --overlapping --n-simulations 10
+
+# High overlap probability
+python examples/rieth2017_dataset.py --overlapping \
+    --faults 1,4,6,11 --overlap-probability 0.7
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--overlapping` | - | Enable overlapping fault mode |
+| `--overlap-probability` | 0.5 | Chance next fault starts during previous |
+| `--max-concurrent` | 2 | Max simultaneous faults |
+| `--gap-hours` | 1.0 | Avg gap when not overlapping |
+
+Output encoding for concurrent faults: `fault1*100 + fault2` (e.g., faults 1,4 = 104)
+
 **Compare with Harvard Dataverse original:**
 ```bash
 # Download original Rieth 2017 dataset

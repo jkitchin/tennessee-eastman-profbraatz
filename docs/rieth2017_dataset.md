@@ -311,6 +311,58 @@ data = generator.generate_intermittent_faults(
 
 **Output format:** The output has the same structure as other datasets (55 columns), but the `faultNumber` column (column 0) changes over time as faults activate and deactivate (0 = normal operation).
 
+### Overlapping Fault Mode
+
+Generate trajectories where multiple faults can be active simultaneously (up to 2 at a time by default):
+
+```bash
+# Generate 10 trajectories with overlapping faults
+python examples/rieth2017_dataset.py --overlapping --n-simulations 10
+
+# High overlap probability with specific faults
+python examples/rieth2017_dataset.py --overlapping --n-simulations 10 \
+    --faults 1,4,6,11 \
+    --overlap-probability 0.7 \
+    --fault-duration 4
+
+# Custom gap and max concurrent faults
+python examples/rieth2017_dataset.py --overlapping \
+    --gap-hours 0.5 \
+    --max-concurrent 2
+```
+
+| Parameter | CLI Flag | Default | Description |
+|-----------|----------|---------|-------------|
+| - | `--overlapping` | - | Enable overlapping fault mode |
+| `overlap_probability` | `--overlap-probability` | 0.5 | Probability next fault starts during previous (50%) |
+| `max_concurrent_faults` | `--max-concurrent` | 2 | Maximum faults active simultaneously |
+| `avg_gap_hours` | `--gap-hours` | 1.0 | Average gap when faults don't overlap |
+| `avg_fault_duration_hours` | `--fault-duration` | 4.0 | Average hours each fault is active |
+| `duration_variance` | `--duration-variance` | 0.5 | Variance factor (0.5 = ±50%) |
+
+**Python API:**
+
+```python
+from examples.rieth2017_dataset import Rieth2017DatasetGenerator
+
+generator = Rieth2017DatasetGenerator(output_dir="./data/overlapping")
+
+# Generate trajectories with potential fault overlaps
+data = generator.generate_overlapping_faults(
+    n_simulations=10,
+    fault_numbers=[1, 2, 3, 4, 5],
+    overlap_probability=0.6,       # 60% chance of overlap
+    max_concurrent_faults=2,       # Up to 2 faults at once
+    avg_fault_duration_hours=4.0,
+    avg_gap_hours=1.0,
+)
+```
+
+**Output encoding:** When multiple faults are active simultaneously, the `faultNumber` column encodes them as:
+- `0`: Normal operation
+- `1-20`: Single fault active
+- `101-2020`: Two faults active (encoded as `fault1*100 + fault2`, e.g., faults 1 and 4 = `104`)
+
 ### Configurable Parameters
 
 All simulation parameters can be customized via CLI or Python API:

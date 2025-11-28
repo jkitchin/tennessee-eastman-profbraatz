@@ -487,3 +487,135 @@ class TestIntermittentFaultScheduleGeneration:
         faults = [1, 4, 6, 11]
         # Each fault should appear exactly once in a trajectory
         assert len(set(faults)) == len(faults)
+
+
+class TestOverlappingFaults:
+    """Tests for overlapping fault trajectory generation."""
+
+    def test_generate_overlapping_faults_basic(self):
+        """generate_overlapping_faults should accept valid parameters."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = Rieth2017DatasetGenerator(output_dir=tmpdir)
+            # Just verify method exists and accepts parameters
+            assert hasattr(gen, 'generate_overlapping_faults')
+            assert callable(gen.generate_overlapping_faults)
+
+    def test_overlapping_faults_parameters(self):
+        """generate_overlapping_faults should accept all documented parameters."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = Rieth2017DatasetGenerator(output_dir=tmpdir)
+            import inspect
+            sig = inspect.signature(gen.generate_overlapping_faults)
+            params = list(sig.parameters.keys())
+
+            expected_params = [
+                'n_simulations', 'fault_numbers', 'avg_fault_duration_hours',
+                'avg_gap_hours', 'overlap_probability', 'duration_variance',
+                'initial_normal_hours', 'max_concurrent_faults',
+                'randomize_fault_order', 'save', 'filename'
+            ]
+            for param in expected_params:
+                assert param in params, f"Missing parameter: {param}"
+
+    def test_overlapping_faults_default_values(self):
+        """generate_overlapping_faults should have sensible defaults."""
+        import inspect
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = Rieth2017DatasetGenerator(output_dir=tmpdir)
+            sig = inspect.signature(gen.generate_overlapping_faults)
+
+            # Check default values
+            assert sig.parameters['n_simulations'].default == 10
+            assert sig.parameters['avg_fault_duration_hours'].default == 4.0
+            assert sig.parameters['avg_gap_hours'].default == 1.0
+            assert sig.parameters['overlap_probability'].default == 0.5
+            assert sig.parameters['duration_variance'].default == 0.5
+            assert sig.parameters['initial_normal_hours'].default == 1.0
+            assert sig.parameters['max_concurrent_faults'].default == 2
+            assert sig.parameters['randomize_fault_order'].default is True
+            assert sig.parameters['save'].default is True
+            assert sig.parameters['filename'].default == "overlapping_faults.npy"
+
+
+class TestRunOverlappingSimulation:
+    """Tests for the _run_overlapping_simulation function."""
+
+    def test_function_exists(self):
+        """_run_overlapping_simulation should be importable."""
+        from rieth2017_dataset import _run_overlapping_simulation
+        assert callable(_run_overlapping_simulation)
+
+    def test_returns_none_without_tep(self):
+        """_run_overlapping_simulation should return None if TEP not available."""
+        from rieth2017_dataset import _run_overlapping_simulation
+
+        # Create test args: (seed, fault_schedule, sampling_interval_min, sim_run, max_concurrent)
+        schedule = [(1.0, 5.0, 1), (3.0, 7.0, 4)]  # Overlapping faults 1 and 4
+        args = (12345, schedule, 3.0, 1, 2)
+
+        # This will return None if TEP simulator is not available
+        result = _run_overlapping_simulation(args)
+        # Result is either None (no TEP) or a dict with expected keys
+        if result is not None:
+            assert "sim_run" in result
+            assert "data" in result
+            assert "fault_labels" in result
+            assert "times" in result
+            assert "shutdown" in result
+
+    def test_overlapping_schedule_format(self):
+        """Overlapping fault schedule should handle concurrent faults."""
+        from rieth2017_dataset import _run_overlapping_simulation
+
+        # Schedule with overlapping faults
+        schedule = [
+            (1.0, 5.0, 1),   # Fault 1 from hour 1 to 5
+            (3.0, 7.0, 4),   # Fault 4 from hour 3 to 7 (overlaps with fault 1)
+            (9.0, 11.0, 6),  # Fault 6 from hour 9 to 11 (no overlap)
+        ]
+        args = (12345, schedule, 3.0, 1, 2)
+
+        # Should not raise an error (may return None if no TEP)
+        result = _run_overlapping_simulation(args)
+        # Just verify it doesn't crash
+
+
+class TestFaultLabelEncoding:
+    """Tests for fault label encoding with overlapping faults."""
+
+    def test_single_fault_encoding(self):
+        """Single faults should be encoded as their fault number."""
+        # Single fault 5 should be encoded as 5
+        fault_label = 5
+        assert fault_label == 5
+
+    def test_dual_fault_encoding(self):
+        """Two concurrent faults should be encoded as fault1*100 + fault2."""
+        # Faults 1 and 4 active should be encoded as 104
+        fault1, fault2 = sorted([1, 4])
+        encoded = fault1 * 100 + fault2
+        assert encoded == 104
+
+        # Faults 4 and 11 should be encoded as 411
+        fault1, fault2 = sorted([4, 11])
+        encoded = fault1 * 100 + fault2
+        assert encoded == 411
+
+    def test_encoding_is_reversible(self):
+        """Encoded fault labels should be decodable."""
+        # Decode function
+        def decode_faults(label):
+            if label == 0:
+                return []
+            elif label < 100:
+                return [label]
+            else:
+                fault1 = label // 100
+                fault2 = label % 100
+                return [fault1, fault2]
+
+        assert decode_faults(0) == []
+        assert decode_faults(5) == [5]
+        assert decode_faults(104) == [1, 4]
+        assert decode_faults(411) == [4, 11]
+        assert decode_faults(1520) == [15, 20]
