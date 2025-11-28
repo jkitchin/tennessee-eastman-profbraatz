@@ -9,6 +9,8 @@ py.install_sources(
     'controllers.py',
     'dashboard.py',
     'dashboard_dash.py',
+    'detector_base.py',
+    'detector_plugins.py',
     'fortran_backend.py',
     'simulator.py',
   ],
