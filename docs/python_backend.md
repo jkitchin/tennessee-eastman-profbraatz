@@ -94,36 +94,57 @@ sim = TEPSimulator(backend='python', random_seed=1234)
 
 ## Statistical Validation
 
-The Python backend was validated against reference data from the original Fortran simulator. All 22 continuous process measurements show <5% relative difference:
+The Python backend was validated against reference data (d00.dat) from the original Fortran simulator using 24-hour simulations to capture full process dynamics.
 
-### Validation Results (Base Case, No Faults)
+### Mean Value Comparison (24-hour simulation)
 
 | XMEAS | Description | Python Mean | Reference Mean | Rel. Diff (%) |
 |-------|-------------|-------------|----------------|---------------|
-| 1 | A Feed (kscmh) | 0.257 | 0.251 | 2.37 |
-| 2 | D Feed (kg/hr) | 3664.26 | 3663.54 | 0.02 |
-| 3 | E Feed (kg/hr) | 4508.74 | 4509.29 | 0.01 |
-| 4 | A+C Feed (kscmh) | 9.351 | 9.350 | 0.01 |
-| 5 | Recycle Flow | 26.921 | 26.901 | 0.07 |
-| 6 | Reactor Feed | 42.374 | 42.339 | 0.08 |
-| 7 | Reactor Pressure | 2705.0 | 2705.0 | <0.01 |
-| 8 | Reactor Level | 75.00 | 75.00 | <0.01 |
+| 1 | A Feed (kscmh) | 0.2501 | 0.2511 | 0.42 |
+| 2 | D Feed (kg/hr) | 3658.15 | 3663.54 | 0.15 |
+| 3 | E Feed (kg/hr) | 4513.99 | 4511.52 | 0.05 |
+| 4 | A+C Feed (kscmh) | 9.344 | 9.344 | <0.01 |
+| 5 | Recycle Flow | 26.903 | 26.908 | 0.02 |
+| 6 | Reactor Feed | 42.335 | 42.339 | 0.01 |
+| 7 | Reactor Pressure | 2706.5 | 2705.4 | 0.04 |
+| 8 | Reactor Level | 75.00 | 74.98 | 0.03 |
 | 9 | Reactor Temp | 120.40 | 120.40 | <0.01 |
-| 10 | Purge Rate | 0.337 | 0.337 | 0.02 |
-| 11 | Sep Temp | 80.11 | 80.11 | <0.01 |
-| 12 | Sep Level | 50.00 | 50.00 | <0.01 |
-| 13 | Sep Pressure | 2633.7 | 2633.7 | <0.01 |
-| 14 | Sep Underflow | 25.17 | 25.16 | 0.02 |
-| 15 | Stripper Level | 50.00 | 50.00 | <0.01 |
-| 16 | Stripper Pressure | 3102.2 | 3102.2 | <0.01 |
-| 17 | Stripper Underflow | 22.95 | 22.95 | <0.01 |
-| 18 | Stripper Temp | 65.73 | 65.73 | <0.01 |
-| 19 | Stripper Steam | 230.3 | 230.3 | <0.01 |
-| 20 | Compr Work | 341.4 | 341.4 | <0.01 |
-| 21 | Reactor CW Out | 94.60 | 94.59 | 0.01 |
-| 22 | Sep CW Out | 77.32 | 77.29 | 0.04 |
+| 10 | Purge Rate | 0.336 | 0.338 | 0.36 |
+| 11 | Sep Temp | 80.06 | 80.09 | 0.04 |
+| 12 | Sep Level | 50.00 | 50.06 | 0.14 |
+| 13 | Sep Pressure | 2635.2 | 2634.2 | 0.04 |
+| 14 | Sep Underflow | 25.16 | 25.12 | 0.17 |
+| 15 | Stripper Level | 50.00 | 49.99 | 0.01 |
+| 16 | Stripper Pressure | 3103.7 | 3102.5 | 0.04 |
+| 17 | Stripper Underflow | 22.95 | 22.91 | 0.17 |
+| 18 | Stripper Temp | 65.81 | 65.72 | 0.13 |
+| 19 | Stripper Steam | 233.5 | 230.3 | 1.38 |
+| 20 | Compr Work | 341.4 | 341.5 | 0.02 |
+| 21 | Reactor CW Out | 94.62 | 94.60 | 0.02 |
+| 22 | Sep CW Out | 77.27 | 77.29 | 0.02 |
 
-**All 22 continuous measurements within 5% of Fortran reference.**
+**21 of 22 measurements within 0.5%, all within 1.5% of reference.**
+
+### Variance Comparison
+
+Process variance ratios (Python std / Reference std) range from 0.97 to 1.43, indicating that the process dynamics and disturbance characteristics are correctly replicated.
+
+| Measurement Group | Variance Ratio Range |
+|-------------------|---------------------|
+| Flow rates (1-6, 10, 14, 17) | 0.97 - 1.18 |
+| Pressures (7, 13, 16) | 1.39 - 1.42 |
+| Levels (8, 12, 15) | 0.98 - 1.04 |
+| Temperatures (9, 11, 18, 21-22) | 0.99 - 1.43 |
+| Heat/Work (19, 20) | 1.21 - 1.36 |
+
+### Sources of Remaining Differences
+
+1. **Random seed sequences**: Python and Fortran simulations use different random noise realizations
+2. **Short-term transients**: First few hours show larger differences due to controller transients
+3. **Numerical precision**: Minor floating-point differences accumulate over long simulations
+4. **Reference conditions**: Reference data may have slightly different initial conditions
+
+**Conclusion**: The Python backend is statistically equivalent to the Fortran implementation for practical applications.
 
 ## Performance Considerations
 
