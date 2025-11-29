@@ -1,3 +1,4 @@
+# TEP Streamlit Dashboard dependencies
 numpy>=1.20.0
 streamlit>=1.20.0
 plotly>=5.0.0
