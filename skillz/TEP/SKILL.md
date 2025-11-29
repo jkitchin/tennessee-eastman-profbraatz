@@ -5,7 +5,7 @@ description: "Expert guidance for Tennessee Eastman Process (TEP) simulator - Py
 
 # Tennessee Eastman Process (TEP) Simulator
 
-The TEP simulator is a Python interface to the classic Tennessee Eastman Process benchmark using original Fortran code via f2py. It simulates an industrial chemical plant with reactor, separator, stripper, and compressor units.
+The TEP simulator is a Python interface to the classic Tennessee Eastman Process benchmark. It includes a pure Python implementation (default) and optional Fortran acceleration via f2py. It simulates an industrial chemical plant with reactor, separator, stripper, and compressor units.
 
 ## Quick Start
 
@@ -142,7 +142,12 @@ Key manipulated variables:
 ## Installation
 
 ```bash
-# Requires gfortran
-pip install -e .           # Basic
-pip install -e ".[dev]"    # With pytest, matplotlib, dash
+# Default (Python backend, no compiler needed)
+pip install -e .
+
+# With Fortran acceleration (~5-10x faster, requires gfortran)
+pip install -e . --config-settings=setup-args=-Dfortran=enabled
+
+# With dev tools (pytest, matplotlib, dash, streamlit)
+pip install -e ".[dev]"
 ```

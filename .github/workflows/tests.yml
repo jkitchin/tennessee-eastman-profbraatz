@@ -7,7 +7,40 @@ on:
     branches: [ master, main ]
 
 jobs:
-  test:
+  # Test with Python-only backend (default installation)
+  test-python-only:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install numpy meson-python meson ninja pytest
+
+    - name: Build and install package (Python backend only)
+      run: |
+        pip install .[dev]
+
+    - name: Run tests
+      run: |
+        # Copy tests and examples to /tmp to avoid source tree tep/ shadowing installed package
+        cp -r tests /tmp/tests
+        cp -r examples /tmp/examples
+        cd /tmp && pytest tests/ -v --tb=short
+
+  # Test with Fortran backend enabled
+  test-with-fortran:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -32,7 +65,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install numpy meson-python meson ninja pytest
 
-    - name: Build and install package
+    - name: Build and install package (with Fortran)
       run: |
         pip install .[dev] -Csetup-args=-Dfortran=enabled
 

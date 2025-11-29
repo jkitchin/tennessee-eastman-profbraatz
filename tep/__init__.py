@@ -152,10 +152,15 @@ __all__ = [
     "get_available_backends",
     "get_default_backend",
     "is_fortran_available",
+    # Dashboard launchers
+    "run_dashboard",
 ]
 
 
 def run_dashboard():
-    """Launch the interactive web dashboard."""
+    """Launch the interactive Dash web dashboard.
+
+    Requires: pip install tep[web]
+    """
     from .dashboard_dash import run_dashboard as _run_dashboard
     _run_dashboard()
