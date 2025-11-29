@@ -430,7 +430,7 @@ def simulation_fragment():
     with tab1:
         if st.session_state.sim_data['time']:
             fig = create_main_figure()
-            st.plotly_chart(fig, use_container_width=True, key=f'main_plot_{len(st.session_state.sim_data["time"])}')
+            st.plotly_chart(fig, width='stretch', key=f'main_plot_{len(st.session_state.sim_data["time"])}')
         else:
             st.info("👆 Click **Start** in the sidebar to begin the simulation.")
             st.markdown("""
@@ -446,10 +446,10 @@ def simulation_fragment():
         if st.session_state.sim_data['time']:
             st.subheader("Process Measurements (XMEAS 1-41)")
             meas_fig, mvs_fig = create_variables_figures()
-            st.plotly_chart(meas_fig, use_container_width=True, key=f'meas_plot_{len(st.session_state.sim_data["time"])}')
+            st.plotly_chart(meas_fig, width='stretch', key=f'meas_plot_{len(st.session_state.sim_data["time"])}')
 
             st.subheader("Manipulated Variables (XMV 1-12)")
-            st.plotly_chart(mvs_fig, use_container_width=True, key=f'mvs_plot_{len(st.session_state.sim_data["time"])}')
+            st.plotly_chart(mvs_fig, width='stretch', key=f'mvs_plot_{len(st.session_state.sim_data["time"])}')
         else:
             st.info("Start the simulation to see variable plots.")
 
@@ -494,13 +494,13 @@ def main():
         # Control buttons
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("▶️ Start", use_container_width=True):
+            if st.button("▶️ Start", width='stretch'):
                 st.session_state.running = True
         with col2:
-            if st.button("⏹️ Stop", use_container_width=True):
+            if st.button("⏹️ Stop", width='stretch'):
                 st.session_state.running = False
         with col3:
-            if st.button("🔄 Reset", use_container_width=True):
+            if st.button("🔄 Reset", width='stretch'):
                 reset_simulator()
                 st.rerun()
 
@@ -560,7 +560,7 @@ def main():
                     csv_data,
                     "tep_simulation_data.csv",
                     "text/csv",
-                    use_container_width=True,
+                    width='stretch',
                     key=f"download_{len(st.session_state.sim_data['time'])}"
                 )
 
