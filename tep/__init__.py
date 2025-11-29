@@ -5,8 +5,15 @@ This package provides a Python interface to the Tennessee Eastman Process
 simulator with two backend options:
 
 Backends:
-    - 'fortran': Original Fortran code via f2py (highest accuracy)
-    - 'python': Pure Python implementation (no Fortran dependency)
+    - 'python': Pure Python implementation (default, no compilation needed)
+    - 'fortran': Original Fortran code via f2py (optional, ~5-10x faster)
+
+Installation:
+    Default (Python only):
+        pip install tep
+
+    With Fortran acceleration (requires gfortran):
+        pip install tep --config-settings=setup-args=-Dfortran=enabled
 
 Based on the original Fortran code by James J. Downs and Ernest F. Vogel,
 with modifications by Evan L. Russell, Leo H. Chiang, and Richard D. Braatz.
@@ -17,13 +24,9 @@ This implementation is designed for:
 - Real-time dashboard integration
 - Educational purposes
 
-Requirements:
-    - Fortran backend: gfortran during installation
-    - Python backend: numpy only (no compilation needed)
-
 Example:
     >>> from tep import TEPSimulator
-    >>> sim = TEPSimulator(backend='python')  # Use pure Python
+    >>> sim = TEPSimulator()  # Uses default backend (python unless fortran installed)
     >>> result = sim.simulate(duration_hours=1.0)
 
 References:

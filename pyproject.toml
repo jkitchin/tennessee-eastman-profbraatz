@@ -58,8 +58,13 @@ tep-web = "tep.dashboard_dash:main"
 tep-streamlit = "tep.dashboard_streamlit:cli_main"
 tep-sim = "tep.cli:main"
 
+# Default: Python-only (no Fortran compilation required)
+# To enable Fortran backend, install with:
+#   pip install . --config-settings=setup-args=-Dfortran=enabled
+# Or set environment variable before install:
+#   export TEP_FORTRAN=1 && pip install .
 [tool.meson-python.args]
-setup = ['-Dfortran=auto']
+setup = ['-Dfortran=disabled']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
