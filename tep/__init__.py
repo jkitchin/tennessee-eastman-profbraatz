@@ -99,8 +99,15 @@ def get_default_backend():
     Returns
     -------
     str
-        'fortran' if available, otherwise 'python'.
+        Returns backend from TEP_BACKEND env var if set,
+        otherwise 'fortran' if available, otherwise 'python'.
     """
+    import os
+    env_backend = os.environ.get('TEP_BACKEND', '').lower()
+    if env_backend in ('python', 'fortran'):
+        if env_backend == 'fortran' and not _FORTRAN_AVAILABLE:
+            return 'python'
+        return env_backend
     return "fortran" if _FORTRAN_AVAILABLE else "python"
 
 
