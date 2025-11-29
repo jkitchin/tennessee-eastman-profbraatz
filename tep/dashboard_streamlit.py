@@ -412,12 +412,17 @@ def simulation_fragment():
     sim = st.session_state.simulator
     sim_time = sim.time if sim else 0
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         status = "🟢 Running" if st.session_state.running else ("🔴 Shutdown" if st.session_state.shutdown else "⏸️ Stopped")
         st.metric("Status", status)
     with col2:
         st.metric("Simulation Time", f"{sim_time:.2f} hr ({sim_time*60:.1f} min)")
+    with col3:
+        # Show active disturbances for debugging
+        active_idvs = sim.get_active_disturbances() if sim else []
+        idv_str = ", ".join(map(str, active_idvs)) if active_idvs else "None"
+        st.metric("Active IDVs", idv_str)
 
     # Display shutdown alert within fragment
     if st.session_state.shutdown:
