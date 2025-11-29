@@ -330,11 +330,17 @@ def run_simulation_step():
         return
 
     # Get parameters from session state
+    # Note: Widget values are stored with their key names in session_state
     speed = st.session_state.get('speed', 50)
     output_interval = st.session_state.get('output_interval', 60)
     control_mode = st.session_state.get('control_mode', 'Closed Loop')
     mv_values = st.session_state.get('mv_values', [])
-    disturbances = st.session_state.get('disturbances', [])
+
+    # Read disturbances directly from checkbox keys (more reliable in fragments)
+    disturbances = []
+    for i in range(NUM_DISTURBANCES):
+        if st.session_state.get(f'idv_{i}', False):
+            disturbances.append(i + 1)
 
     # Update control mode
     if control_mode == 'Closed Loop':
@@ -534,17 +540,14 @@ def main():
 
         # Disturbances
         st.header("⚡ Disturbances")
-        disturbances = []
+        active_disturbances = []
 
         for i in range(NUM_DISTURBANCES):
             if st.checkbox(IDV_INFO[i][0], key=f"idv_{i}", help=IDV_INFO[i][1]):
-                disturbances.append(i + 1)
+                active_disturbances.append(i + 1)
 
-        # Store disturbances in session state for fragment access
-        st.session_state.disturbances = disturbances
-
-        if disturbances:
-            st.warning(f"Active: IDV({', '.join(map(str, disturbances))})")
+        if active_disturbances:
+            st.warning(f"Active: IDV({', '.join(map(str, active_disturbances))})")
 
         st.divider()
 
