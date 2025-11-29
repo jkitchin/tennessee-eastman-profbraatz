@@ -153,8 +153,8 @@ def create_main_figure():
     fig = make_subplots(
         rows=3, cols=2,
         subplot_titles=[cfg[0] for cfg in PLOT_CONFIGS],
-        vertical_spacing=0.10,
-        horizontal_spacing=0.08
+        vertical_spacing=0.12,
+        horizontal_spacing=0.10
     )
 
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2']
@@ -191,8 +191,8 @@ def create_main_figure():
         fig.update_xaxes(title_text="Time (min)", row=row, col=col)
 
     fig.update_layout(
-        height=700,
-        margin=dict(l=50, r=30, t=40, b=40),
+        height=800,
+        margin=dict(l=50, r=30, t=60, b=50),
         template='plotly_white',
         legend=dict(
             orientation='h',
