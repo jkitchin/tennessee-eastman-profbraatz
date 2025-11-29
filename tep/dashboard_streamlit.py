@@ -422,6 +422,12 @@ def simulation_fragment():
     Using @st.fragment with run_every allows this to update independently
     of the main app, reducing full-page reruns and blinking.
     """
+    # Debug: log every fragment run
+    sim = st.session_state.get('simulator')
+    running = st.session_state.get('running', False)
+    if sim and running:
+        logger.info(f"Fragment running: t={sim.time:.3f}hr, running={running}")
+
     # Run simulation step if running
     if st.session_state.running and not st.session_state.shutdown:
         try:
