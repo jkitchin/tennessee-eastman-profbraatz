@@ -27,8 +27,8 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .simulator import TEPSimulator, ControlMode
-from .constants import (
+from tep.simulator import TEPSimulator, ControlMode
+from tep.constants import (
     NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES, INITIAL_STATES,
     SAFETY_LIMITS
 )
@@ -123,7 +123,7 @@ def init_session_state():
     if 'shutdown_reason' not in st.session_state:
         st.session_state.shutdown_reason = ""
     if 'backend' not in st.session_state:
-        from . import get_default_backend
+        from tep import get_default_backend
         st.session_state.backend = get_default_backend()
 
 
@@ -409,7 +409,7 @@ def main():
         st.header("⚙️ Simulation Control")
 
         # Backend selection
-        from . import get_available_backends
+        from tep import get_available_backends
         backends = get_available_backends()
         backend = st.selectbox(
             "Backend",
@@ -425,13 +425,13 @@ def main():
         # Control buttons
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("▶️ Start", use_container_width=True):
+            if st.button("▶️ Start", width='stretch'):
                 st.session_state.running = True
         with col2:
-            if st.button("⏹️ Stop", use_container_width=True):
+            if st.button("⏹️ Stop", width='stretch'):
                 st.session_state.running = False
         with col3:
-            if st.button("🔄 Reset", use_container_width=True):
+            if st.button("🔄 Reset", width='stretch'):
                 reset_simulator()
                 st.rerun()
 
@@ -493,7 +493,7 @@ def main():
                 csv_data,
                 "tep_simulation_data.csv",
                 "text/csv",
-                use_container_width=True
+                width='stretch'
             )
 
     # Main content - Tabs
@@ -502,7 +502,7 @@ def main():
     with tab1:
         if st.session_state.sim_data['time']:
             fig = create_main_figure()
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("👆 Click **Start** in the sidebar to begin the simulation.")
             st.markdown("""
@@ -518,10 +518,10 @@ def main():
         if st.session_state.sim_data['time']:
             st.subheader("Process Measurements (XMEAS 1-41)")
             meas_fig, mvs_fig = create_variables_figures()
-            st.plotly_chart(meas_fig, use_container_width=True)
+            st.plotly_chart(meas_fig, width='stretch')
 
             st.subheader("Manipulated Variables (XMV 1-12)")
-            st.plotly_chart(mvs_fig, use_container_width=True)
+            st.plotly_chart(mvs_fig, width='stretch')
         else:
             st.info("Start the simulation to see variable plots.")
 
