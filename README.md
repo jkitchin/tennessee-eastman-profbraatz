@@ -10,6 +10,10 @@ Based on the original Fortran code by J.J. Downs and E.F. Vogel (1993), with mod
 
 Python wrapper developed with Claude Code by John Kitchin.
 
+## Live Demo
+
+Try the simulator online: **[Tennessee Eastman Process Simulator](https://tennessee-eastman-process.streamlit.app/)**
+
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
