@@ -494,8 +494,9 @@ def main():
         reset_simulator()
 
     # Header
+    from tep import __version__
     st.title("🏭 Tennessee Eastman Process Simulator")
-    st.caption("Interactive Process Control Dashboard | [GitHub](https://github.com/jkitchin/tennessee-eastman-profbraatz)")
+    st.caption(f"v{__version__} | Interactive Process Control Dashboard | [GitHub](https://github.com/jkitchin/tennessee-eastman-profbraatz)")
 
     # Sidebar - Controls
     with st.sidebar:
