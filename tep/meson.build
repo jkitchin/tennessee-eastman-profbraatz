@@ -8,9 +8,11 @@ py.install_sources(
     'controller_plugins.py',
     'controllers.py',
     'dashboard_dash.py',
+    'dashboard_streamlit.py',
     'detector_base.py',
     'detector_plugins.py',
     'fortran_backend.py',
+    'python_backend.py',
     'simulator.py',
   ],
   subdir: 'tep'

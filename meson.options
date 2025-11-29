@@ -1,4 +1,4 @@
 option('fortran', type: 'combo',
        choices: ['auto', 'enabled', 'disabled'],
-       value: 'auto',
-       description: 'Build Fortran extension')
+       value: 'disabled',
+       description: 'Build Fortran extension (use -Dfortran=enabled or -Dfortran=auto to enable)')

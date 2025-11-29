@@ -4,7 +4,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Python interface to the Tennessee Eastman Process (TEP) simulator using the original Fortran code via f2py for exact reproduction of simulation results.
+A Python interface to the Tennessee Eastman Process (TEP) simulator with both pure Python and optional Fortran backends.
 
 Based on the original Fortran code by J.J. Downs and E.F. Vogel (1993), with modifications by E.L. Russell, L.H. Chiang, and R.D. Braatz.
 
@@ -13,16 +13,16 @@ Python wrapper developed with Claude Code by John Kitchin.
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
+- **Two backends**: Pure Python (default, no compiler needed) or Fortran (~5-10x faster)
 - **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
 - **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
 - **Real-time fault detection** with pluggable detector modules and performance metrics
 - **Controller plugin system** for custom control strategies
-- **Batch simulation CLI** (`tep-sim`) for scripted data generation with Fortran-compatible output
+- **Batch simulation CLI** (`tep-sim`) for scripted data generation
 - **Real-time streaming interface** for dashboard integration
-- **Interactive web dashboard** (`tep-web`) with live plotting and controls
+- **Interactive web dashboards** (`tep-web` for Dash, `tep-streamlit` for Streamlit)
 - **Graphical plotting** of simulation results (optional matplotlib dependency)
 - **Reproducible simulations** with seeded random number generation
-- **Exact Fortran results** via f2py wrapper (requires gfortran)
 
 ## Example Output
 
@@ -35,23 +35,28 @@ Python wrapper developed with Claude Code by John Kitchin.
 ### Requirements
 
 - Python 3.8+
-- Fortran compiler (gfortran) - required for building the f2py extension
 - NumPy
 
 ### Installation
 
 ```bash
-# Basic installation (requires gfortran)
+# Default installation (Python backend, no compiler needed)
 pip install -e .
 
-# With web dashboard support (includes Dash and Plotly)
+# With Fortran acceleration (requires gfortran, ~5-10x faster)
+pip install -e . --config-settings=setup-args=-Dfortran=enabled
+
+# With web dashboard support (Dash)
 pip install -e ".[web]"
 
-# For development (includes pytest)
+# With Streamlit dashboard
+pip install -e ".[streamlit]"
+
+# For development (includes pytest, matplotlib)
 pip install -e ".[dev]"
 ```
 
-**Note:** Installation requires a Fortran compiler. On macOS: `brew install gcc`. On Linux: `apt install gfortran`.
+**Note:** The default installation uses a pure Python backend and requires no compiler. For Fortran acceleration, install gfortran first: On macOS: `brew install gcc`. On Linux: `apt install gfortran`.
 
 ### Basic Usage
 
@@ -315,22 +320,24 @@ tep-sim --list-faults
 
 ```
 tep/
-├── __init__.py          # Package exports
-├── simulator.py         # High-level TEPSimulator interface
-├── fortran_backend.py   # f2py wrapper for Fortran TEINIT/TEFUNC
-├── constants.py         # Physical constants, initial states, variable names
-├── controllers.py       # PI controllers, decentralized control
-├── controller_base.py   # Controller plugin system base classes
+├── __init__.py           # Package exports
+├── simulator.py          # High-level TEPSimulator interface (backend-agnostic)
+├── python_backend.py     # Pure Python implementation (default)
+├── fortran_backend.py    # f2py wrapper for Fortran TEINIT/TEFUNC (optional)
+├── constants.py          # Physical constants, initial states, variable names
+├── controllers.py        # PI controllers, decentralized control
+├── controller_base.py    # Controller plugin system base classes
 ├── controller_plugins.py # Built-in controller implementations
-├── detector_base.py     # Fault detection system base classes
-├── detector_plugins.py  # Built-in detector implementations (PCA, EWMA, etc.)
-├── cli.py               # Batch simulation CLI (tep-sim command)
-├── dashboard_dash.py    # Web-based Dash dashboard (tep-web command)
-└── _fortran/            # Compiled Fortran extension (built during install)
+├── detector_base.py      # Fault detection system base classes
+├── detector_plugins.py   # Built-in detector implementations (PCA, EWMA, etc.)
+├── cli.py                # Batch simulation CLI (tep-sim command)
+├── dashboard_dash.py     # Web-based Dash dashboard (tep-web command)
+├── dashboard_streamlit.py # Streamlit dashboard (tep-streamlit command)
+└── _fortran/             # Compiled Fortran extension (optional)
     └── teprob.cpython-*.so
 ```
 
-The simulator uses the original Fortran code (`teprob.f`) via f2py, ensuring exact numerical parity with the published TEP benchmark.
+The default Python backend provides a pure Python implementation of the TEP process. The optional Fortran backend uses the original code via f2py for ~5-10x faster simulations.
 
 ## Process Overview
 

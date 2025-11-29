@@ -1,23 +1,40 @@
 # TEP Web Dashboard Guide
 
-The TEP Web Dashboard provides a real-time browser-based interface for running and monitoring Tennessee Eastman Process simulations.
+The TEP package provides two interactive web dashboards for running and monitoring Tennessee Eastman Process simulations:
+- **Dash Dashboard** (`tep-web`) - Full-featured dashboard with Plotly charts
+- **Streamlit Dashboard** (`tep-streamlit`) - Lightweight alternative using Streamlit
 
 ## Quick Start
 
 ### Installation
 
-Install the web dashboard dependencies:
+Install web dashboard dependencies:
 
 ```bash
+# For Dash dashboard
 pip install -e ".[web]"
+
+# For Streamlit dashboard
+pip install -e ".[streamlit]"
+
+# For both
+pip install -e ".[dev]"
 ```
 
-### Launch
+### Launch Dash Dashboard
 
 From the command line:
 
 ```bash
 tep-web
+```
+
+### Launch Streamlit Dashboard
+
+From the command line:
+
+```bash
+tep-streamlit
 ```
 
 With options:

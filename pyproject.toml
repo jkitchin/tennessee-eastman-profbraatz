@@ -38,22 +38,34 @@ web = [
     "dash>=2.0.0",
     "plotly>=5.0.0",
 ]
+streamlit = [
+    "streamlit>=1.20.0",
+    "plotly>=5.0.0",
+]
 plot = [
     "matplotlib>=3.5.0",
 ]
 dev = [
     "pytest>=7.0.0",
+    "scipy>=1.7.0",
     "matplotlib>=3.5.0",
     "dash>=2.0.0",
     "plotly>=5.0.0",
+    "streamlit>=1.20.0",
 ]
 
 [project.scripts]
 tep-web = "tep.dashboard_dash:main"
+tep-streamlit = "tep.dashboard_streamlit:cli_main"
 tep-sim = "tep.cli:main"
 
+# Default: Python-only (no Fortran compilation required)
+# To enable Fortran backend, install with:
+#   pip install . --config-settings=setup-args=-Dfortran=enabled
+# Or set environment variable before install:
+#   export TEP_FORTRAN=1 && pip install .
 [tool.meson-python.args]
-setup = ['-Dfortran=auto']
+setup = ['-Dfortran=disabled']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

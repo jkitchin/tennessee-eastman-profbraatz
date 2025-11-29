@@ -8,6 +8,8 @@ This document provides detailed API documentation for the Tennessee Eastman Proc
 - [SimulationResult](#simulationresult)
 - [Controllers](#controllers)
 - [FortranTEProcess](#fortranteprocess)
+- [PythonTEProcess](#pythonteprocess)
+- [Backend Selection](#backend-selection)
 - [Constants](#constants)
 
 ---
@@ -28,7 +30,8 @@ from tep.simulator import ControlMode
 ```python
 TEPSimulator(
     random_seed: int = None,
-    control_mode: ControlMode = ControlMode.CLOSED_LOOP
+    control_mode: ControlMode = ControlMode.CLOSED_LOOP,
+    backend: str = None
 )
 ```
 
@@ -38,8 +41,17 @@ TEPSimulator(
 |-----------|------|---------|-------------|
 | `random_seed` | `int` | `1431655765` | Random seed for reproducible simulations |
 | `control_mode` | `ControlMode` | `CLOSED_LOOP` | Control mode (see below) |
+| `backend` | `str` | `None` (auto) | Simulation backend: `None`, `"fortran"`, or `"python"` |
 
-**Note:** The simulator uses the Fortran backend via f2py, which requires a Fortran compiler (gfortran) during installation.
+**Backend Options:**
+
+| Backend | Description |
+|---------|-------------|
+| `None` | Auto-select best available (Fortran if installed, otherwise Python) |
+| `"python"` | Pure Python implementation (default install, no compilation needed) |
+| `"fortran"` | Original Fortran code via f2py (~5-10x faster, requires gfortran) |
+
+**Note:** The default installation uses the Python backend. To enable Fortran acceleration, install with: `pip install . --config-settings=setup-args=-Dfortran=enabled`
 
 **Control Modes:**
 
@@ -397,6 +409,54 @@ process.set_idv(1, 1)
 ```
 
 This class wraps the original Fortran subroutines `TEINIT` and `TEFUNC` via f2py, providing exact numerical results matching the original TEP benchmark.
+
+---
+
+## PythonTEProcess
+
+Low-level pure Python process interface (reimplementation of Fortran TEINIT/TEFUNC).
+
+```python
+from tep import PythonTEProcess
+
+process = PythonTEProcess(random_seed=12345)
+process.teinit()
+
+# Evaluate derivatives
+process.tefunc(time=0.0)
+yp = process.yp  # Derivative array
+
+# Get/set measurements and MVs
+xmeas = process.get_xmeas()
+xmv = process.get_xmv()
+process.set_xmv(1, 50.0)
+process.set_idv(1, 1)
+```
+
+This class provides a pure Python implementation of the TEP simulator, matching the Fortran code's behavior without requiring compilation. See [Python Backend Documentation](python_backend.md) for details.
+
+---
+
+## Backend Selection
+
+Utility functions for backend selection:
+
+```python
+from tep import (
+    get_available_backends,  # Returns ['fortran', 'python'] or ['python']
+    get_default_backend,     # Returns 'fortran' if available, else 'python'
+    is_fortran_available,    # Returns True if Fortran backend was compiled
+)
+
+# Example usage
+if is_fortran_available():
+    sim = TEPSimulator(backend='fortran')
+else:
+    sim = TEPSimulator(backend='python')
+
+# Or let the library choose
+sim = TEPSimulator(backend=get_default_backend())
+```
 
 ---
 

@@ -9,9 +9,15 @@ The main simulation interface for the Tennessee Eastman Process.
 ```python
 TEPSimulator(
     random_seed: int = None,           # Seed for reproducibility (default: 4651207995)
-    control_mode: ControlMode = ControlMode.CLOSED_LOOP
+    control_mode: ControlMode = ControlMode.CLOSED_LOOP,
+    backend: str = None                # 'python', 'fortran', or None (auto)
 )
 ```
+
+**Backend Options:**
+- `None` (default): Auto-select (Fortran if installed, otherwise Python)
+- `'python'`: Pure Python implementation (no compiler needed)
+- `'fortran'`: Original Fortran via f2py (~5-10x faster, requires gfortran)
 
 **Control Modes:**
 - `ControlMode.OPEN_LOOP` - No automatic control
