@@ -129,10 +129,12 @@ def init_session_state():
 
 def reset_simulator():
     """Reset the simulator to initial state."""
+    print(f"[TEP] Creating simulator with backend: {st.session_state.backend}")
     st.session_state.simulator = TEPSimulator(
         control_mode=ControlMode.CLOSED_LOOP,
         backend=st.session_state.backend
     )
+    print(f"[TEP] Simulator created, process type: {type(st.session_state.simulator.process).__name__}")
     st.session_state.simulator.initialize()
     st.session_state.sim_data = {
         'time': [],
@@ -358,6 +360,11 @@ def run_simulation_step():
     simulator.clear_disturbances()
     for idv in disturbances:
         simulator.set_disturbance(idv, 1)
+
+    # Log active disturbances periodically
+    if simulator.step_count % 1000 == 0:
+        active = simulator.get_active_disturbances()
+        print(f"[TEP] t={simulator.time:.3f}hr, active IDVs: {active}, backend: {type(simulator.process).__name__}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
