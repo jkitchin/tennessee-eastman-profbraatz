@@ -4,26 +4,61 @@ Main Tennessee Eastman Process Simulator.
 This module provides the high-level TEPSimulator class that integrates
 all components and provides an easy-to-use interface for simulation.
 
-This version uses the Fortran backend exclusively via f2py for exact
-reproduction of the original simulation results.
+Supports two backends:
+    - 'fortran': Original Fortran code via f2py (default, highest accuracy)
+    - 'python': Pure Python implementation (no Fortran dependency)
 
 Features:
     - Batch and streaming simulation modes
     - Configurable control modes (open loop, closed loop, manual)
     - Disturbance injection with scheduling
     - Real-time fault detection with pluggable detectors
+    - Backend selection for deployment flexibility
 """
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Callable, Tuple, Union, TYPE_CHECKING
+from typing import List, Dict, Optional, Callable, Tuple, Union, TYPE_CHECKING, Literal
 from enum import Enum
-from .fortran_backend import FortranTEProcess
 from .controllers import DecentralizedController, ManualController, PIController
 from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS,
     DEFAULT_RANDOM_SEED
 )
+
+# Backend type alias
+BackendType = Literal["fortran", "python"]
+
+
+def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
+    """Create the appropriate backend process.
+
+    Parameters
+    ----------
+    backend : str
+        Backend type: 'fortran' or 'python'
+    random_seed : int, optional
+        Random seed for reproducibility
+
+    Returns
+    -------
+    process
+        FortranTEProcess or PythonTEProcess instance
+    """
+    if backend == "fortran":
+        try:
+            from .fortran_backend import FortranTEProcess
+            return FortranTEProcess(random_seed)
+        except ImportError as e:
+            raise ImportError(
+                "Fortran backend not available. Install with 'pip install -e .' "
+                "or use backend='python'. Error: " + str(e)
+            )
+    elif backend == "python":
+        from .python_backend import PythonTEProcess
+        return PythonTEProcess(random_seed)
+    else:
+        raise ValueError(f"Unknown backend: {backend}. Use 'fortran' or 'python'.")
 
 # Import detector types for type checking (avoid circular imports)
 if TYPE_CHECKING:
@@ -103,6 +138,7 @@ class TEPSimulator:
         self,
         random_seed: int = None,
         control_mode: ControlMode = ControlMode.CLOSED_LOOP,
+        backend: BackendType = "fortran",
     ):
         """
         Initialize the TEP simulator.
@@ -110,18 +146,22 @@ class TEPSimulator:
         Args:
             random_seed: Random seed for reproducibility
             control_mode: Control mode (open_loop, closed_loop, or manual)
+            backend: Simulation backend ('fortran' or 'python')
+                - 'fortran': Uses original Fortran code via f2py (default)
+                - 'python': Pure Python implementation (no Fortran dependency)
 
         Raises:
-            ImportError: If Fortran extension is not available
+            ImportError: If Fortran extension is not available and backend='fortran'
         """
         if random_seed is None:
             random_seed = DEFAULT_RANDOM_SEED
 
         self.random_seed = random_seed
         self.control_mode = control_mode
+        self._backend_type = backend
 
-        # Initialize process with Fortran backend
-        self.process = FortranTEProcess(random_seed)
+        # Initialize process with selected backend
+        self.process = _create_backend(backend, random_seed)
 
         # Initialize controller based on mode
         self._init_controller()
@@ -237,8 +277,8 @@ class TEPSimulator:
 
     @property
     def backend(self) -> str:
-        """Get the current simulation backend (always 'fortran')."""
-        return "fortran"
+        """Get the current simulation backend ('fortran' or 'python')."""
+        return self._backend_type
 
     def step(self, n_steps: int = 1) -> bool:
         """

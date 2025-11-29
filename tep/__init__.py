@@ -2,8 +2,11 @@
 Tennessee Eastman Process (TEP) Simulator
 
 This package provides a Python interface to the Tennessee Eastman Process
-simulator using the original Fortran code via f2py for exact reproduction
-of simulation results.
+simulator with two backend options:
+
+Backends:
+    - 'fortran': Original Fortran code via f2py (highest accuracy)
+    - 'python': Pure Python implementation (no Fortran dependency)
 
 Based on the original Fortran code by James J. Downs and Ernest F. Vogel,
 with modifications by Evan L. Russell, Leo H. Chiang, and Richard D. Braatz.
@@ -15,7 +18,13 @@ This implementation is designed for:
 - Educational purposes
 
 Requirements:
-    - Fortran compiler (gfortran) during installation
+    - Fortran backend: gfortran during installation
+    - Python backend: numpy only (no compilation needed)
+
+Example:
+    >>> from tep import TEPSimulator
+    >>> sim = TEPSimulator(backend='python')  # Use pure Python
+    >>> result = sim.simulate(duration_hours=1.0)
 
 References:
     J.J. Downs and E.F. Vogel, "A plant-wide industrial process control problem,"
@@ -26,8 +35,20 @@ References:
 """
 
 from .simulator import TEPSimulator, ControlMode
-from .fortran_backend import FortranTEProcess
+from .python_backend import PythonTEProcess
 from .controllers import PIController, DecentralizedController, ManualController
+
+# Try to import Fortran backend (optional)
+# The import of FortranTEProcess may succeed even if the extension isn't built,
+# so we need to actually try using it to confirm availability.
+try:
+    from .fortran_backend import FortranTEProcess
+    # Actually test that the extension is available
+    from tep._fortran import teprob as _teprob
+    _FORTRAN_AVAILABLE = True
+except ImportError:
+    _FORTRAN_AVAILABLE = False
+    FortranTEProcess = None
 from .controller_base import (
     BaseController,
     ControllerRegistry,
@@ -60,9 +81,13 @@ def get_available_backends():
     Returns
     -------
     list
-        List containing 'fortran' (only backend available).
+        List of available backend names. Always includes 'python'.
+        Includes 'fortran' if the Fortran extension was compiled.
     """
-    return ["fortran"]
+    backends = ["python"]
+    if _FORTRAN_AVAILABLE:
+        backends.insert(0, "fortran")
+    return backends
 
 
 def get_default_backend():
@@ -71,15 +96,28 @@ def get_default_backend():
     Returns
     -------
     str
-        Always returns 'fortran'.
+        'fortran' if available, otherwise 'python'.
     """
-    return "fortran"
+    return "fortran" if _FORTRAN_AVAILABLE else "python"
+
+
+def is_fortran_available():
+    """Check if Fortran backend is available.
+
+    Returns
+    -------
+    bool
+        True if Fortran extension was compiled and can be imported.
+    """
+    return _FORTRAN_AVAILABLE
 
 
 __all__ = [
     # Simulator
     "TEPSimulator",
     "ControlMode",
+    # Backends
+    "PythonTEProcess",
     "FortranTEProcess",
     # Controllers
     "PIController",
@@ -110,6 +148,7 @@ __all__ = [
     # Utilities
     "get_available_backends",
     "get_default_backend",
+    "is_fortran_available",
 ]
 
 
