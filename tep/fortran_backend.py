@@ -21,13 +21,15 @@ class FortranTEProcess:
         Parameters
         ----------
         random_seed : int, optional
-            Random seed for reproducibility.
+            Random seed for reproducibility. If provided, this seed is used
+            to initialize the Fortran random number generator before teinit.
         """
         from tep._fortran import teprob
         self._teprob = teprob
         self._nn = 50  # Number of state variables
         self._initialized = False
         self.time = 0.0
+        self._random_seed = random_seed
 
         # State vectors (Fortran-contiguous arrays)
         self.yy = np.zeros(self._nn, dtype=np.float64, order='F')
@@ -39,16 +41,22 @@ class FortranTEProcess:
         # Create disturbances wrapper for API compatibility
         self.disturbances = FortranDisturbanceManager(self)
 
-        # Set random seed if provided (there's no randsd in the wrapped module)
-        # The seed is set during teinit via the RANDSD common block
-
     def _initialize(self):
         """Call TEINIT to initialize the process (internal method for TEPSimulator)."""
         self.initialize()
 
     def initialize(self):
-        """Call TEINIT to initialize the process."""
+        """Call TEINIT to initialize the process.
+
+        If a random_seed was provided during construction, it is set after
+        calling teinit to override the default seed (since teinit sets G=4651207995).
+        """
         self._teprob.teinit(0.0, self.yy, self.yp)
+
+        # Set random seed AFTER teinit if provided (teinit sets its own default seed)
+        if self._random_seed is not None:
+            self._teprob.randsd.g = float(self._random_seed)
+
         self._initialized = True
         self.time = 0.0
 

@@ -1,0 +1,40 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module teprob ! in
+    interface  ! in :teprob
+        subroutine teinit(nn,time,yy,yp) ! in :teprob:teprob.f
+            integer intent(in) :: nn
+            double precision intent(in) :: time
+            double precision dimension(50),intent(in,out) :: yy
+            double precision dimension(50),intent(out) :: yp
+        end subroutine teinit
+
+        subroutine tefunc(nn,time,yy,yp) ! in :teprob:teprob.f
+            integer intent(in) :: nn
+            double precision intent(in) :: time
+            double precision dimension(50),intent(in,out) :: yy
+            double precision dimension(50),intent(out) :: yp
+        end subroutine tefunc
+
+        function tesub7(i) ! in :teprob:teprob.f
+            integer intent(in) :: i
+            double precision :: tesub7
+        end function tesub7
+    end interface
+
+    ! Common blocks to expose to Python
+    common /pv/ xmeas(41),xmv(12)
+    double precision dimension(41) :: xmeas
+    double precision dimension(12) :: xmv
+
+    common /dvec/ idv(20)
+    integer dimension(20) :: idv
+
+    common /randsd/ g
+    double precision :: g
+
+    common /flag6/ flag
+    integer :: flag
+
+end python module teprob
