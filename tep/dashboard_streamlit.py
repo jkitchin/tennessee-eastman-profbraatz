@@ -344,6 +344,12 @@ def run_simulation_step():
         if st.session_state.get(f'idv_{i}', False):
             disturbances.append(i + 1)
 
+    # Log when disturbances change
+    prev_disturbances = getattr(simulator, '_prev_disturbances', [])
+    if disturbances != prev_disturbances:
+        print(f"[TEP] Disturbances changed: {prev_disturbances} -> {disturbances}")
+        simulator._prev_disturbances = disturbances.copy()
+
     # Update control mode
     if control_mode == 'Closed Loop':
         if simulator.control_mode != ControlMode.CLOSED_LOOP:
@@ -413,7 +419,13 @@ def simulation_fragment():
     """
     # Run simulation step if running
     if st.session_state.running and not st.session_state.shutdown:
-        run_simulation_step()
+        try:
+            run_simulation_step()
+        except Exception as e:
+            print(f"[TEP] ERROR in run_simulation_step: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            st.error(f"Simulation error: {e}")
 
     # Display status
     sim = st.session_state.simulator
