@@ -21,9 +21,14 @@ Usage:
 import numpy as np
 import time
 import io
+import logging
 from datetime import datetime
 
 import streamlit as st
+
+# Set up logging that works on Streamlit Cloud
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -129,12 +134,12 @@ def init_session_state():
 
 def reset_simulator():
     """Reset the simulator to initial state."""
-    print(f"[TEP] Creating simulator with backend: {st.session_state.backend}")
+    logger.info(f"Creating simulator with backend: {st.session_state.backend}")
     st.session_state.simulator = TEPSimulator(
         control_mode=ControlMode.CLOSED_LOOP,
         backend=st.session_state.backend
     )
-    print(f"[TEP] Simulator created, process type: {type(st.session_state.simulator.process).__name__}")
+    logger.info(f"Simulator created, process type: {type(st.session_state.simulator.process).__name__}")
     st.session_state.simulator.initialize()
     st.session_state.sim_data = {
         'time': [],
@@ -347,7 +352,7 @@ def run_simulation_step():
     # Log when disturbances change
     prev_disturbances = getattr(simulator, '_prev_disturbances', [])
     if disturbances != prev_disturbances:
-        print(f"[TEP] Disturbances changed: {prev_disturbances} -> {disturbances}")
+        logger.info(f"Disturbances changed: {prev_disturbances} -> {disturbances}")
         simulator._prev_disturbances = disturbances.copy()
 
     # Update control mode
@@ -370,7 +375,7 @@ def run_simulation_step():
     # Log active disturbances periodically (every ~100 steps for more visibility)
     if simulator.step_count % 100 == 0:
         active = simulator.get_active_disturbances()
-        print(f"[TEP] t={simulator.time:.3f}hr, step={simulator.step_count}, active IDVs: {active}, checkboxes: {disturbances}")
+        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, active IDVs: {active}, checkboxes: {disturbances}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
@@ -422,9 +427,7 @@ def simulation_fragment():
         try:
             run_simulation_step()
         except Exception as e:
-            print(f"[TEP] ERROR in run_simulation_step: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"ERROR in run_simulation_step: {type(e).__name__}: {e}")
             st.error(f"Simulation error: {e}")
 
     # Display status
