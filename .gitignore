@@ -85,3 +85,6 @@ tep_fortran
 
 # Comparison images (generated during development)
 *_comparison*.png
+
+
+research/*
