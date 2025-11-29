@@ -343,8 +343,9 @@ def run_simulation_step(speed, output_interval, control_mode, mv_values, disturb
     for idv in disturbances:
         simulator.set_disturbance(idv, 1)
 
-    # Run simulation steps
-    for _ in range(speed):
+    # Run more simulation steps per update to reduce rerun frequency
+    steps_per_update = speed * 5  # Run 5x more steps before updating UI
+    for _ in range(steps_per_update):
         if not simulator.step():
             st.session_state.running = False
             st.session_state.shutdown = True
@@ -500,35 +501,41 @@ def main():
     tab1, tab2 = st.tabs(["📊 Process Plots", "📈 All Variables"])
 
     with tab1:
+        plot_placeholder = st.empty()
         if st.session_state.sim_data['time']:
-            fig = create_main_figure()
-            st.plotly_chart(fig, width='stretch')
+            with plot_placeholder.container():
+                fig = create_main_figure()
+                st.plotly_chart(fig, width='stretch', key='main_plot')
         else:
-            st.info("👆 Click **Start** in the sidebar to begin the simulation.")
-            st.markdown("""
-            ### Quick Start Guide
-            1. Select the simulation **backend** (Fortran for speed, Python for portability)
-            2. Adjust **simulation speed** with the slider
-            3. Enable **disturbances** to test fault scenarios
-            4. Switch to **Manual** mode to control valves directly
-            5. Use the **All Variables** tab to see all 41 measurements
-            """)
+            with plot_placeholder.container():
+                st.info("👆 Click **Start** in the sidebar to begin the simulation.")
+                st.markdown("""
+                ### Quick Start Guide
+                1. Select the simulation **backend** (Fortran for speed, Python for portability)
+                2. Adjust **simulation speed** with the slider
+                3. Enable **disturbances** to test fault scenarios
+                4. Switch to **Manual** mode to control valves directly
+                5. Use the **All Variables** tab to see all 41 measurements
+                """)
 
     with tab2:
+        vars_placeholder = st.empty()
         if st.session_state.sim_data['time']:
-            st.subheader("Process Measurements (XMEAS 1-41)")
-            meas_fig, mvs_fig = create_variables_figures()
-            st.plotly_chart(meas_fig, width='stretch')
+            with vars_placeholder.container():
+                st.subheader("Process Measurements (XMEAS 1-41)")
+                meas_fig, mvs_fig = create_variables_figures()
+                st.plotly_chart(meas_fig, width='stretch', key='meas_plot')
 
-            st.subheader("Manipulated Variables (XMV 1-12)")
-            st.plotly_chart(mvs_fig, width='stretch')
+                st.subheader("Manipulated Variables (XMV 1-12)")
+                st.plotly_chart(mvs_fig, width='stretch', key='mvs_plot')
         else:
-            st.info("Start the simulation to see variable plots.")
+            with vars_placeholder.container():
+                st.info("Start the simulation to see variable plots.")
 
-    # Run simulation if running
+    # Run simulation if running - use fragment for smoother updates
     if st.session_state.running and not st.session_state.shutdown:
         run_simulation_step(speed, output_interval, control_mode, mv_values, disturbances)
-        time.sleep(0.1)  # Small delay for UI responsiveness
+        time.sleep(0.05)  # Shorter delay
         st.rerun()
 
 

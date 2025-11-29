@@ -37,6 +37,7 @@ from .constants import (
     NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES, INITIAL_STATES,
     SAFETY_LIMITS, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES
 )
+from . import get_available_backends, get_default_backend
 
 
 # Global simulator instance and data storage
@@ -106,10 +107,12 @@ PLOT_CONFIGS = [
 ]
 
 
-def init_simulator():
+def init_simulator(backend=None):
     """Initialize or reset the simulator."""
     global simulator, sim_data
-    simulator = TEPSimulator(control_mode=ControlMode.CLOSED_LOOP)
+    if backend is None:
+        backend = get_default_backend()
+    simulator = TEPSimulator(control_mode=ControlMode.CLOSED_LOOP, backend=backend)
     simulator.initialize()
     sim_data['time'] = []
     sim_data['measurements'] = {i: [] for i in range(NUM_MEASUREMENTS)}
@@ -118,6 +121,7 @@ def init_simulator():
     sim_data['running'] = False
     sim_data['shutdown_reason'] = None
     sim_data['last_output_time'] = 0
+    sim_data['backend'] = backend
 
 
 def get_shutdown_reason(meas):
@@ -215,6 +219,16 @@ def create_layout():
                 # Simulation controls
                 html.Div([
                     html.H3("Simulation Control", style={'marginTop': '0'}),
+
+                    # Backend selection
+                    html.Label("Backend:"),
+                    dcc.Dropdown(
+                        id='backend-dropdown',
+                        options=[{'label': b.capitalize(), 'value': b} for b in get_available_backends()],
+                        value=get_default_backend(),
+                        clearable=False,
+                        style={'marginBottom': '10px'}
+                    ),
 
                     # Control mode
                     html.Label("Control Mode:"),
@@ -502,13 +516,14 @@ app.layout = create_layout()
     Input('start-btn', 'n_clicks'),
     Input('stop-btn', 'n_clicks'),
     Input('reset-btn', 'n_clicks'),
+    Input('backend-dropdown', 'value'),
     State('sim-state', 'data'),
     State('speed-slider', 'value'),
     State('output-interval-slider', 'value'),
     prevent_initial_call=True
 )
-def control_simulation(start_clicks, stop_clicks, reset_clicks, state, speed, output_interval):
-    """Handle start/stop/reset button clicks."""
+def control_simulation(start_clicks, stop_clicks, reset_clicks, backend, state, speed, output_interval):
+    """Handle start/stop/reset button clicks and backend changes."""
     global sim_data
 
     triggered = ctx.triggered_id
@@ -527,9 +542,15 @@ def control_simulation(start_clicks, stop_clicks, reset_clicks, state, speed, ou
         return True, state, "Stopped", {'color': '#e74c3c'}
 
     elif triggered == 'reset-btn':
-        init_simulator()
+        init_simulator(backend)
         state['running'] = False
         return True, state, "Ready", {'color': '#27ae60'}
+
+    elif triggered == 'backend-dropdown':
+        # Backend changed - reinitialize simulator with new backend
+        init_simulator(backend)
+        state['running'] = False
+        return True, state, f"Ready ({backend})", {'color': '#27ae60'}
 
     return True, state, "Ready", {'color': '#27ae60'}
 
