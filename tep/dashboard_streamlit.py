@@ -486,16 +486,18 @@ def main():
 
         st.divider()
 
-        # Download button
-        csv_data = generate_csv()
-        if csv_data:
-            st.download_button(
-                "📥 Download Data (CSV)",
-                csv_data,
-                "tep_simulation_data.csv",
-                "text/csv",
-                width='stretch'
-            )
+        # Download button - only show when simulation is stopped to avoid cache issues
+        if not st.session_state.running:
+            csv_data = generate_csv()
+            if csv_data:
+                st.download_button(
+                    "📥 Download Data (CSV)",
+                    csv_data,
+                    "tep_simulation_data.csv",
+                    "text/csv",
+                    width='stretch',
+                    key=f"download_{len(st.session_state.sim_data['time'])}"
+                )
 
     # Main content - Tabs
     tab1, tab2 = st.tabs(["📊 Process Plots", "📈 All Variables"])
