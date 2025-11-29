@@ -4,7 +4,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Python interface to the Tennessee Eastman Process (TEP) simulator using the original Fortran code via f2py for exact reproduction of simulation results.
+A Python interface to the Tennessee Eastman Process (TEP) simulator with both pure Python and optional Fortran backends.
 
 Based on the original Fortran code by J.J. Downs and E.F. Vogel (1993), with modifications by E.L. Russell, L.H. Chiang, and R.D. Braatz.
 
@@ -13,16 +13,16 @@ Python wrapper developed with Claude Code by John Kitchin.
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
+- **Two backends**: Pure Python (default, no compiler needed) or Fortran (~5-10x faster)
 - **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
 - **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
 - **Real-time fault detection** with pluggable detector modules and performance metrics
 - **Controller plugin system** for custom control strategies
-- **Batch simulation CLI** (`tep-sim`) for scripted data generation with Fortran-compatible output
+- **Batch simulation CLI** (`tep-sim`) for scripted data generation
 - **Real-time streaming interface** for dashboard integration
-- **Interactive web dashboard** (`tep-web`) with live plotting and controls
+- **Interactive web dashboards** (`tep-web` for Dash, `tep-streamlit` for Streamlit)
 - **Graphical plotting** of simulation results (optional matplotlib dependency)
 - **Reproducible simulations** with seeded random number generation
-- **Exact Fortran results** via f2py wrapper (requires gfortran)
 
 ## Example Output
 

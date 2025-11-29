@@ -31,7 +31,7 @@ from tep.simulator import ControlMode
 TEPSimulator(
     random_seed: int = None,
     control_mode: ControlMode = ControlMode.CLOSED_LOOP,
-    backend: str = "fortran"
+    backend: str = None
 )
 ```
 
@@ -41,16 +41,17 @@ TEPSimulator(
 |-----------|------|---------|-------------|
 | `random_seed` | `int` | `1431655765` | Random seed for reproducible simulations |
 | `control_mode` | `ControlMode` | `CLOSED_LOOP` | Control mode (see below) |
-| `backend` | `str` | `"fortran"` | Simulation backend: `"fortran"` or `"python"` |
+| `backend` | `str` | `None` (auto) | Simulation backend: `None`, `"fortran"`, or `"python"` |
 
 **Backend Options:**
 
 | Backend | Description |
 |---------|-------------|
-| `"fortran"` | Original Fortran code via f2py (highest accuracy, requires gfortran) |
-| `"python"` | Pure Python implementation (no compilation, statistically similar) |
+| `None` | Auto-select best available (Fortran if installed, otherwise Python) |
+| `"python"` | Pure Python implementation (default install, no compilation needed) |
+| `"fortran"` | Original Fortran code via f2py (~5-10x faster, requires gfortran) |
 
-**Note:** The default `"fortran"` backend requires a Fortran compiler (gfortran) during installation. Use `backend="python"` when Fortran is unavailable.
+**Note:** The default installation uses the Python backend. To enable Fortran acceleration, install with: `pip install . --config-settings=setup-args=-Dfortran=enabled`
 
 **Control Modes:**
 

@@ -138,7 +138,7 @@ class TEPSimulator:
         self,
         random_seed: int = None,
         control_mode: ControlMode = ControlMode.CLOSED_LOOP,
-        backend: BackendType = "fortran",
+        backend: BackendType = None,
     ):
         """
         Initialize the TEP simulator.
@@ -146,15 +146,21 @@ class TEPSimulator:
         Args:
             random_seed: Random seed for reproducibility
             control_mode: Control mode (open_loop, closed_loop, or manual)
-            backend: Simulation backend ('fortran' or 'python')
-                - 'fortran': Uses original Fortran code via f2py (default)
-                - 'python': Pure Python implementation (no Fortran dependency)
+            backend: Simulation backend ('fortran', 'python', or None for auto)
+                - None: Automatically selects best available (default)
+                - 'fortran': Uses original Fortran code via f2py (~5-10x faster)
+                - 'python': Pure Python implementation (no compilation needed)
 
         Raises:
             ImportError: If Fortran extension is not available and backend='fortran'
         """
         if random_seed is None:
             random_seed = DEFAULT_RANDOM_SEED
+
+        # Auto-select backend if not specified
+        if backend is None:
+            from . import get_default_backend
+            backend = get_default_backend()
 
         self.random_seed = random_seed
         self.control_mode = control_mode
