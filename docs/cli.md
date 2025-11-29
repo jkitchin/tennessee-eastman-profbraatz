@@ -244,12 +244,16 @@ tep-sim --duration 0.1 --quiet --output test.dat
 
 ## Troubleshooting
 
-### "Fortran extension not available"
+### Backend Selection
 
-The TEP simulator requires the compiled Fortran extension. Install with:
+The TEP simulator uses a pure Python backend by default. For faster simulations (~5-10x), install the optional Fortran backend:
 
 ```bash
-pip install tep  # Requires gfortran
+# Default (Python backend, no compiler needed)
+pip install -e .
+
+# With Fortran acceleration (requires gfortran)
+pip install -e . --config-settings=setup-args=-Dfortran=enabled
 ```
 
 On macOS: `brew install gcc`

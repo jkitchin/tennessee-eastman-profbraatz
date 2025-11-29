@@ -11,16 +11,20 @@ The Python backend (`tep/python_backend.py`) is a complete reimplementation of t
 ```python
 from tep import TEPSimulator
 
-# Use Python backend (no Fortran required)
+# Use Python backend (default, no Fortran required)
 sim_py = TEPSimulator(backend='python')
 
-# Use Fortran backend (highest accuracy, requires gfortran)
+# Use Fortran backend (~5-10x faster, requires gfortran)
 sim_f = TEPSimulator(backend='fortran')
 
+# Auto-select best available backend
+sim = TEPSimulator()  # Uses Fortran if installed, otherwise Python
+
 # Check available backends
-from tep import get_available_backends, get_default_backend
+from tep import get_available_backends, get_default_backend, is_fortran_available
 print(get_available_backends())  # ['fortran', 'python'] or ['python']
-print(get_default_backend())     # 'fortran' if available, else 'python'
+print(get_default_backend())     # 'fortran' if installed, else 'python'
+print(is_fortran_available())    # True if Fortran backend was compiled
 ```
 
 ## Architecture
