@@ -367,10 +367,10 @@ def run_simulation_step():
     for idv in disturbances:
         simulator.set_disturbance(idv, 1)
 
-    # Log active disturbances periodically
-    if simulator.step_count % 1000 == 0:
+    # Log active disturbances periodically (every ~100 steps for more visibility)
+    if simulator.step_count % 100 == 0:
         active = simulator.get_active_disturbances()
-        print(f"[TEP] t={simulator.time:.3f}hr, active IDVs: {active}, backend: {type(simulator.process).__name__}")
+        print(f"[TEP] t={simulator.time:.3f}hr, step={simulator.step_count}, active IDVs: {active}, checkboxes: {disturbances}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
