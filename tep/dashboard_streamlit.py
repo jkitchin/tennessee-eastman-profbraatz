@@ -318,13 +318,23 @@ def generate_csv():
     return '\n'.join(lines)
 
 
-def run_simulation_step(speed, output_interval, control_mode, mv_values, disturbances):
-    """Run simulation steps and record data."""
+def run_simulation_step():
+    """Run simulation steps and record data.
+
+    Reads parameters from session state to work with @st.fragment.
+    """
     simulator = st.session_state.simulator
     sim_data = st.session_state.sim_data
 
     if simulator is None:
         return
+
+    # Get parameters from session state
+    speed = st.session_state.get('speed', 50)
+    output_interval = st.session_state.get('output_interval', 60)
+    control_mode = st.session_state.get('control_mode', 'Closed Loop')
+    mv_values = st.session_state.get('mv_values', [])
+    disturbances = st.session_state.get('disturbances', [])
 
     # Update control mode
     if control_mode == 'Closed Loop':
@@ -344,7 +354,7 @@ def run_simulation_step(speed, output_interval, control_mode, mv_values, disturb
         simulator.set_disturbance(idv, 1)
 
     # Run more simulation steps per update to reduce rerun frequency
-    steps_per_update = speed * 5  # Run 5x more steps before updating UI
+    steps_per_update = speed * 10  # Run 10x more steps before updating UI
     for _ in range(steps_per_update):
         if not simulator.step():
             st.session_state.running = False
@@ -381,6 +391,63 @@ def run_simulation_step(speed, output_interval, control_mode, mv_values, disturb
         sim_data['idv'] = sim_data['idv'][::step]
 
 
+@st.fragment(run_every=0.5)
+def simulation_fragment():
+    """Fragment that runs the simulation and updates plots.
+
+    Using @st.fragment with run_every allows this to update independently
+    of the main app, reducing full-page reruns and blinking.
+    """
+    # Run simulation step if running
+    if st.session_state.running and not st.session_state.shutdown:
+        run_simulation_step()
+
+    # Display status
+    sim = st.session_state.simulator
+    sim_time = sim.time if sim else 0
+
+    col1, col2 = st.columns(2)
+    with col1:
+        status = "🟢 Running" if st.session_state.running else ("🔴 Shutdown" if st.session_state.shutdown else "⏸️ Stopped")
+        st.metric("Status", status)
+    with col2:
+        st.metric("Simulation Time", f"{sim_time:.2f} hr ({sim_time*60:.1f} min)")
+
+    # Display shutdown alert within fragment
+    if st.session_state.shutdown:
+        st.error(f"⚠️ **PROCESS SHUTDOWN**: {st.session_state.shutdown_reason}")
+        st.info("Click 'Reset' in the sidebar to restart the simulation.")
+
+    # Tabs for plots
+    tab1, tab2 = st.tabs(["📊 Process Plots", "📈 All Variables"])
+
+    with tab1:
+        if st.session_state.sim_data['time']:
+            fig = create_main_figure()
+            st.plotly_chart(fig, use_container_width=True, key=f'main_plot_{len(st.session_state.sim_data["time"])}')
+        else:
+            st.info("👆 Click **Start** in the sidebar to begin the simulation.")
+            st.markdown("""
+            ### Quick Start Guide
+            1. Select the simulation **backend** (Fortran for speed, Python for portability)
+            2. Adjust **simulation speed** with the slider
+            3. Enable **disturbances** to test fault scenarios
+            4. Switch to **Manual** mode to control valves directly
+            5. Use the **All Variables** tab to see all 41 measurements
+            """)
+
+    with tab2:
+        if st.session_state.sim_data['time']:
+            st.subheader("Process Measurements (XMEAS 1-41)")
+            meas_fig, mvs_fig = create_variables_figures()
+            st.plotly_chart(meas_fig, use_container_width=True, key=f'meas_plot_{len(st.session_state.sim_data["time"])}')
+
+            st.subheader("Manipulated Variables (XMV 1-12)")
+            st.plotly_chart(mvs_fig, use_container_width=True, key=f'mvs_plot_{len(st.session_state.sim_data["time"])}')
+        else:
+            st.info("Start the simulation to see variable plots.")
+
+
 def main():
     """Main Streamlit app."""
     st.set_page_config(
@@ -399,11 +466,6 @@ def main():
     # Header
     st.title("🏭 Tennessee Eastman Process Simulator")
     st.caption("Interactive Process Control Dashboard | [GitHub](https://github.com/jkitchin/tennessee-eastman-profbraatz)")
-
-    # Shutdown alert
-    if st.session_state.shutdown:
-        st.error(f"⚠️ **PROCESS SHUTDOWN**: {st.session_state.shutdown_reason}")
-        st.info("Click 'Reset' in the sidebar to restart the simulation.")
 
     # Sidebar - Controls
     with st.sidebar:
@@ -426,22 +488,15 @@ def main():
         # Control buttons
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("▶️ Start", width='stretch'):
+            if st.button("▶️ Start", use_container_width=True):
                 st.session_state.running = True
         with col2:
-            if st.button("⏹️ Stop", width='stretch'):
+            if st.button("⏹️ Stop", use_container_width=True):
                 st.session_state.running = False
         with col3:
-            if st.button("🔄 Reset", width='stretch'):
+            if st.button("🔄 Reset", use_container_width=True):
                 reset_simulator()
                 st.rerun()
-
-        # Status
-        sim = st.session_state.simulator
-        status = "🟢 Running" if st.session_state.running else ("🔴 Shutdown" if st.session_state.shutdown else "⏸️ Stopped")
-        sim_time = sim.time if sim else 0
-        st.metric("Status", status)
-        st.metric("Simulation Time", f"{sim_time:.2f} hr ({sim_time*60:.1f} min)")
 
         st.divider()
 
@@ -449,11 +504,12 @@ def main():
         control_mode = st.radio(
             "Control Mode",
             ["Closed Loop", "Manual"],
-            horizontal=True
+            horizontal=True,
+            key='control_mode'
         )
 
-        speed = st.slider("Speed (steps/update)", 1, 100, 50)
-        output_interval = st.slider("Output Interval (sec)", 1, 300, 60)
+        speed = st.slider("Speed (steps/update)", 1, 100, 50, key='speed')
+        output_interval = st.slider("Output Interval (sec)", 1, 300, 60, key='output_interval')
 
         st.divider()
 
@@ -471,6 +527,9 @@ def main():
             )
             mv_values.append(val)
 
+        # Store mv_values in session state for fragment access
+        st.session_state.mv_values = mv_values
+
         st.divider()
 
         # Disturbances
@@ -480,6 +539,9 @@ def main():
         for i in range(NUM_DISTURBANCES):
             if st.checkbox(IDV_INFO[i][0], key=f"idv_{i}", help=IDV_INFO[i][1]):
                 disturbances.append(i + 1)
+
+        # Store disturbances in session state for fragment access
+        st.session_state.disturbances = disturbances
 
         if disturbances:
             st.warning(f"Active: IDV({', '.join(map(str, disturbances))})")
@@ -495,50 +557,12 @@ def main():
                     csv_data,
                     "tep_simulation_data.csv",
                     "text/csv",
-                    width='stretch',
+                    use_container_width=True,
                     key=f"download_{len(st.session_state.sim_data['time'])}"
                 )
 
-    # Main content - Tabs
-    tab1, tab2 = st.tabs(["📊 Process Plots", "📈 All Variables"])
-
-    with tab1:
-        plot_placeholder = st.empty()
-        if st.session_state.sim_data['time']:
-            with plot_placeholder.container():
-                fig = create_main_figure()
-                st.plotly_chart(fig, width='stretch', key='main_plot')
-        else:
-            with plot_placeholder.container():
-                st.info("👆 Click **Start** in the sidebar to begin the simulation.")
-                st.markdown("""
-                ### Quick Start Guide
-                1. Select the simulation **backend** (Fortran for speed, Python for portability)
-                2. Adjust **simulation speed** with the slider
-                3. Enable **disturbances** to test fault scenarios
-                4. Switch to **Manual** mode to control valves directly
-                5. Use the **All Variables** tab to see all 41 measurements
-                """)
-
-    with tab2:
-        vars_placeholder = st.empty()
-        if st.session_state.sim_data['time']:
-            with vars_placeholder.container():
-                st.subheader("Process Measurements (XMEAS 1-41)")
-                meas_fig, mvs_fig = create_variables_figures()
-                st.plotly_chart(meas_fig, width='stretch', key='meas_plot')
-
-                st.subheader("Manipulated Variables (XMV 1-12)")
-                st.plotly_chart(mvs_fig, width='stretch', key='mvs_plot')
-        else:
-            with vars_placeholder.container():
-                st.info("Start the simulation to see variable plots.")
-
-    # Run simulation if running - use fragment for smoother updates
-    if st.session_state.running and not st.session_state.shutdown:
-        run_simulation_step(speed, output_interval, control_mode, mv_values, disturbances)
-        time.sleep(0.05)  # Shorter delay
-        st.rerun()
+    # Main content - use fragment for smooth updates
+    simulation_fragment()
 
 
 def run_dashboard(host='localhost', port=8501, open_browser=True):

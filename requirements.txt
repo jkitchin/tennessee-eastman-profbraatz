@@ -1,4 +1,4 @@
 # TEP Streamlit Dashboard dependencies
 numpy>=1.20.0
-streamlit>=1.20.0
+streamlit>=1.37.0  # Required for @st.fragment decorator
 plotly>=5.0.0
