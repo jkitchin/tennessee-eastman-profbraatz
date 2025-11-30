@@ -434,17 +434,32 @@ def create_layout():
                             html.Ul([
                                 html.Li([
                                     "J.J. Downs and E.F. Vogel, ",
-                                    html.Em("A plant-wide industrial process control problem"),
+                                    html.A(
+                                        html.Em("A plant-wide industrial process control problem"),
+                                        href="https://doi.org/10.1016/0098-1354(93)80018-I",
+                                        target="_blank",
+                                        style={'color': '#3498db', 'textDecoration': 'none'}
+                                    ),
                                     ", Computers and Chemical Engineering, 17:245-255 (1993)."
                                 ]),
                                 html.Li([
                                     "N.L. Ricker, ",
-                                    html.Em("Decentralized control of the Tennessee Eastman Challenge Process"),
+                                    html.A(
+                                        html.Em("Decentralized control of the Tennessee Eastman Challenge Process"),
+                                        href="https://doi.org/10.1016/0959-1524(96)00031-5",
+                                        target="_blank",
+                                        style={'color': '#3498db', 'textDecoration': 'none'}
+                                    ),
                                     ", J. Process Control, 6:205-221 (1996)."
                                 ]),
                                 html.Li([
                                     "A. Bathelt, N.L. Ricker, M. Jelali, ",
-                                    html.Em("Revision of the Tennessee Eastman Process Model"),
+                                    html.A(
+                                        html.Em("Revision of the Tennessee Eastman Process Model"),
+                                        href="https://doi.org/10.1016/j.ifacol.2015.08.199",
+                                        target="_blank",
+                                        style={'color': '#3498db', 'textDecoration': 'none'}
+                                    ),
                                     ", IFAC-PapersOnLine, 48:309-314 (2015)."
                                 ]),
                             ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8', 'fontSize': '14px'})
