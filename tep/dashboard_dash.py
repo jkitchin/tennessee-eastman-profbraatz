@@ -369,49 +369,47 @@ def create_layout():
                          'boxShadow': '0 2px 5px rgba(0,0,0,0.1)'})
             ], style={'width': '300px', 'flexShrink': '0', 'marginRight': '15px'}),
 
-            # Center - Tabs with Plots and All Variables
+            # Center - Main plots and All Variables (no tabs)
             html.Div([
-                dcc.Tabs(id='main-tabs', value='plots-tab', children=[
-                    dcc.Tab(label='Process Plots', value='plots-tab', children=[
-                        # Welcome message shown before simulation starts
-                        html.Div(id='welcome-message', children=[
-                            html.Div([
-                                html.H2("Welcome to the TEP Simulator",
-                                       style={'color': '#2c3e50', 'marginBottom': '20px'}),
-                                html.P("Press the Start button to begin the simulation.",
-                                      style={'fontSize': '18px', 'color': '#7f8c8d', 'marginBottom': '30px'}),
-                                html.Div([
-                                    html.H4("Quick Start Guide:", style={'color': '#34495e', 'marginBottom': '15px'}),
-                                    html.Ul([
-                                        html.Li("Adjust simulation speed with the slider"),
-                                        html.Li("Set data output interval (how often points are recorded)"),
-                                        html.Li("Enable disturbances on the right panel to test fault scenarios"),
-                                        html.Li("Switch to Manual mode to control valves directly"),
-                                        html.Li("Use the All Variables tab to see all 41 measurements"),
-                                    ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8'})
-                                ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
-                                         'maxWidth': '500px', 'margin': '0 auto'})
-                            ], style={'textAlign': 'center', 'padding': '100px 20px'})
-                        ], style={'display': 'block'}),
-                        # Graph hidden initially, shown when simulation runs
-                        dcc.Graph(id='main-plots', style={'height': '850px', 'display': 'none'})
-                    ]),
-                    dcc.Tab(label='All Variables', value='variables-tab', children=[
+                # Welcome message shown before simulation starts
+                html.Div(id='welcome-message', children=[
+                    html.Div([
+                        html.H2("Welcome to the TEP Simulator",
+                               style={'color': '#2c3e50', 'marginBottom': '20px'}),
+                        html.P("Press the Start button to begin the simulation.",
+                              style={'fontSize': '18px', 'color': '#7f8c8d', 'marginBottom': '30px'}),
                         html.Div([
-                            # Measurements plots
-                            html.H4("Process Measurements (XMEAS 1-41)",
-                                   style={'marginTop': '10px', 'marginBottom': '10px', 'color': '#2c3e50'}),
-                            dcc.Graph(id='measurements-grid', style={'height': '600px'}, figure={}),
+                            html.H4("Quick Start Guide:", style={'color': '#34495e', 'marginBottom': '15px'}),
+                            html.Ul([
+                                html.Li("Adjust simulation speed with the slider"),
+                                html.Li("Set data output interval (how often points are recorded)"),
+                                html.Li("Enable disturbances on the right panel to test fault scenarios"),
+                                html.Li("Switch to Manual mode to control valves directly"),
+                                html.Li("Scroll down to see all 41 measurements and 12 MVs"),
+                            ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8'})
+                        ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
+                                 'maxWidth': '500px', 'margin': '0 auto'})
+                    ], style={'textAlign': 'center', 'padding': '100px 20px'})
+                ], style={'display': 'block'}),
 
-                            # MVs plots
-                            html.H4("Manipulated Variables (XMV 1-12)",
-                                   style={'marginTop': '10px', 'marginBottom': '10px', 'color': '#2c3e50'}),
-                            dcc.Graph(id='mvs-grid', style={'height': '350px'}, figure={}),
-                        ], style={'padding': '10px', 'maxHeight': '1000px', 'overflowY': 'auto'})
-                    ]),
-                ], style={'height': '100%'})
+                # Main process plots
+                dcc.Graph(id='main-plots', style={'height': '850px', 'display': 'none'}),
+
+                # All Variables section (shown below main plots)
+                html.Div(id='all-variables-section', children=[
+                    # Measurements plots
+                    html.H4("All Process Measurements (XMEAS 1-41)",
+                           style={'marginTop': '20px', 'marginBottom': '10px', 'color': '#2c3e50'}),
+                    dcc.Graph(id='measurements-grid', style={'height': '900px'}),
+
+                    # MVs plots
+                    html.H4("All Manipulated Variables (XMV 1-12)",
+                           style={'marginTop': '20px', 'marginBottom': '10px', 'color': '#2c3e50'}),
+                    dcc.Graph(id='mvs-grid', style={'height': '400px'}),
+                ], style={'display': 'none'})
             ], style={'flexGrow': '1', 'backgroundColor': '#fff', 'borderRadius': '5px',
-                     'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'padding': '10px'}),
+                     'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'padding': '10px',
+                     'overflowY': 'auto', 'maxHeight': 'calc(100vh - 150px)'}),
 
             # Right panel - Disturbances
             html.Div([
@@ -601,28 +599,31 @@ def control_simulation(start_clicks, stop_clicks, reset_clicks, backend, state, 
 @app.callback(
     Output('main-plots', 'style'),
     Output('welcome-message', 'style'),
+    Output('all-variables-section', 'style'),
     Input('start-btn', 'n_clicks'),
     Input('reset-btn', 'n_clicks'),
     prevent_initial_call=True
 )
 def toggle_welcome_message(start_clicks, reset_clicks):
-    """Show/hide welcome message based on simulation state."""
+    """Show/hide welcome message and plots based on simulation state."""
     triggered = ctx.triggered_id
 
     graph_visible = {'height': '850px', 'display': 'block'}
     graph_hidden = {'height': '850px', 'display': 'none'}
     welcome_visible = {'display': 'block'}
     welcome_hidden = {'display': 'none'}
+    all_vars_visible = {'display': 'block'}
+    all_vars_hidden = {'display': 'none'}
 
     if triggered == 'start-btn':
-        # Hide welcome, show graph
-        return graph_visible, welcome_hidden
+        # Hide welcome, show graphs
+        return graph_visible, welcome_hidden, all_vars_visible
     elif triggered == 'reset-btn':
-        # Show welcome, hide graph
-        return graph_hidden, welcome_visible
+        # Show welcome, hide graphs
+        return graph_hidden, welcome_visible, all_vars_hidden
 
     # Default: show welcome
-    return graph_hidden, welcome_visible
+    return graph_hidden, welcome_visible, all_vars_hidden
 
 
 @app.callback(
@@ -913,26 +914,20 @@ def create_figure_with_data():
     Output('measurements-grid', 'figure'),
     Output('mvs-grid', 'figure'),
     Input('interval-component', 'n_intervals'),
-    Input('main-tabs', 'value'),
-    prevent_initial_call=False
+    prevent_initial_call=True
 )
-def update_variables_grid(n_intervals, active_tab):
+def update_variables_grid(n_intervals):
     """Update the All Variables grid with time series plots."""
     global simulator, sim_data
     from dash import no_update
 
-    # Only update if the Variables tab is active to reduce browser load
-    if active_tab != 'variables-tab':
+    # Skip if no data yet
+    if not sim_data['time']:
         return no_update, no_update
 
-    # Also skip if no data yet
-    if not sim_data['time']:
-        # Return empty figures with message
-        empty_fig = go.Figure()
-        empty_fig.update_layout(
-            annotations=[dict(text="Start simulation to see data", x=0.5, y=0.5, showarrow=False, font=dict(size=16))]
-        )
-        return empty_fig, empty_fig
+    # Only update every 5th interval to reduce browser load (53 subplots is expensive)
+    if n_intervals % 5 != 0:
+        return no_update, no_update
 
     max_points = sim_data.get('max_display_points', 2000)
     time_data_full = sim_data['time']
@@ -969,8 +964,8 @@ def update_variables_grid(n_intervals, active_tab):
         )
 
     meas_fig.update_layout(
-        height=600,
-        margin=dict(l=30, r=10, t=30, b=30),
+        height=900,
+        margin=dict(l=40, r=20, t=40, b=40),
         template='plotly_white',
         showlegend=False,
     )
@@ -1009,8 +1004,8 @@ def update_variables_grid(n_intervals, active_tab):
         )
 
     mvs_fig.update_layout(
-        height=350,
-        margin=dict(l=30, r=10, t=30, b=30),
+        height=400,
+        margin=dict(l=40, r=20, t=40, b=40),
         template='plotly_white',
         showlegend=False,
     )
