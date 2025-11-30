@@ -26,14 +26,14 @@ RUN pip install --no-cache-dir meson meson-python ninja numpy
 COPY . /app
 
 # Install the TEP package with Fortran backend
-# Show full build output for debugging
-RUN echo "=== Building TEP with Fortran backend ===" && \
-    pip install --no-cache-dir -v . --config-settings=setup-args=-Dfortran=enabled 2>&1 && \
-    echo "=== Verifying Fortran extension ===" && \
-    python -c "from tep._fortran import teprob; print('Fortran extension loaded successfully')" || \
-    (echo "=== Fortran build/import failed, falling back to Python-only ===" && \
-     pip install --no-cache-dir . && \
-     python -c "from tep import is_fortran_available; print(f'Fortran available: {is_fortran_available()}')")
+RUN pip install --no-cache-dir . --config-settings=setup-args=-Dfortran=enabled
+
+# Remove source tep/ directory to avoid shadowing the installed package
+# The installed package in site-packages has the compiled .so file
+RUN rm -rf /app/tep
+
+# Verify Fortran extension after installation
+RUN python -c "from tep import is_fortran_available, get_available_backends; print(f'Fortran available: {is_fortran_available()}'); print(f'Backends: {get_available_backends()}')"
 
 # Create non-root user for security (required by HF Spaces)
 RUN useradd -m -u 1000 user
