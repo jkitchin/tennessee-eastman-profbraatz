@@ -963,5 +963,222 @@ class TestAPICompatibility:
         assert hasattr(wrapper, 'time')
 
 
+class TestTefuncImplementation:
+    """Test the _tefunc derivative calculation function."""
+
+    def test_tefunc_produces_derivatives(self):
+        """Test that _tefunc produces non-zero derivatives."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        # Check that derivatives are computed
+        yp = state.yp
+        assert yp.shape == (50,)
+        assert jnp.any(yp != 0.0), "Derivatives should not all be zero"
+
+    def test_tefunc_derivative_magnitudes(self):
+        """Test that derivatives have reasonable magnitudes."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        yp = state.yp
+
+        # Derivatives should be finite
+        assert jnp.all(jnp.isfinite(yp)), "Derivatives should be finite"
+
+        # At steady state, derivatives should be relatively small
+        # (allowing for initialization differences)
+        max_derivative = jnp.max(jnp.abs(yp))
+        assert max_derivative < 1e6, f"Derivatives too large: {max_derivative}"
+
+    def test_tefunc_measurements_computed(self):
+        """Test that measurements are computed by _tefunc."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        xmeas = state.measurements.xmeas
+        assert xmeas.shape == (41,)
+
+        # Key measurements should be non-zero
+        assert xmeas[6] != 0.0, "Reactor pressure should be non-zero"
+        assert xmeas[8] != 0.0, "Reactor temperature should be non-zero"
+
+    def test_tefunc_updates_reactor_state(self):
+        """Test that _tefunc updates reactor state variables."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        reactor = state.reactor
+
+        # Check key reactor variables
+        assert reactor.tcr > 0, "Reactor temperature should be positive"
+        assert reactor.ptr > 0, "Reactor pressure should be positive"
+        assert reactor.vlr > 0, "Reactor liquid volume should be positive"
+
+    def test_tefunc_simulation_step(self):
+        """Test that simulation step updates state correctly."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        # Take one step
+        initial_time = state.time
+        initial_yy = state.yy.copy()
+
+        state, key = process.step(state, key)
+
+        # Time should advance
+        assert state.time > initial_time
+
+        # State should change (due to non-zero derivatives)
+        assert not jnp.allclose(state.yy, initial_yy)
+
+    def test_tefunc_multiple_steps(self):
+        """Test simulation runs for multiple steps without issues."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        # Run for 100 steps (100 seconds)
+        for _ in range(100):
+            state, key = process.step(state, key)
+
+        # Check state is still valid
+        assert jnp.all(jnp.isfinite(state.yy)), "State should remain finite"
+        assert jnp.all(jnp.isfinite(state.yp)), "Derivatives should remain finite"
+        assert state.time > 0
+
+    def test_tefunc_jit_compiled_simulation(self):
+        """Test that JIT-compiled simulation runs correctly."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        state, key = process.initialize(key)
+
+        # JIT compile the step function
+        step_jit = jax.jit(process.step)
+
+        # Run for 50 steps with JIT
+        for _ in range(50):
+            state, key = step_jit(state, key)
+
+        # Check state is still valid
+        assert jnp.all(jnp.isfinite(state.yy)), "State should remain finite"
+        assert state.time > 0
+
+
+class TestTefuncComparisonWithPython:
+    """Compare JAX _tefunc results with Python backend."""
+
+    def test_initial_derivatives_comparable(self):
+        """Test that initial derivatives are finite and simulation converges."""
+        from tep.jax_backend import JaxTEProcess
+        from tep.python_backend import PythonTEProcess
+
+        # Initialize both backends
+        jax_proc = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        jax_state, key = jax_proc.initialize(key)
+
+        py_proc = PythonTEProcess()
+        py_proc.initialize()
+
+        # Get derivatives
+        jax_yp = np.array(jax_state.yp)
+        py_yp = py_proc.yp
+
+        # Both should produce finite derivatives
+        assert np.all(np.isfinite(jax_yp)), "JAX derivatives should be finite"
+        assert np.all(np.isfinite(py_yp)), "Python derivatives should be finite"
+
+        # Run both for 100 steps and compare - they should converge to similar behavior
+        for _ in range(100):
+            jax_state, key = jax_proc.step(jax_state, key)
+            py_proc.step()
+
+        # After simulation, states should be in same order of magnitude
+        jax_yy = np.array(jax_state.yy)
+        py_yy = py_proc.yy
+
+        # Check key states (first 8 reactor states)
+        for i in range(8):
+            if abs(py_yy[i]) > 0.1:
+                rel_error = abs(jax_yy[i] - py_yy[i]) / abs(py_yy[i])
+                assert rel_error < 0.5, f"State {i} diverged after 100 steps: JAX={jax_yy[i]}, Python={py_yy[i]}"
+
+    def test_measurements_comparable(self):
+        """Test that measurements are comparable between backends."""
+        from tep.jax_backend import JaxTEProcess
+        from tep.python_backend import PythonTEProcess
+
+        # Initialize both backends
+        jax_proc = JaxTEProcess()
+        key = jax.random.PRNGKey(1234)
+        jax_state, key = jax_proc.initialize(key)
+
+        py_proc = PythonTEProcess()
+        py_proc.initialize()
+
+        # Get measurements
+        jax_xmeas = np.array(jax_state.measurements.xmeas)
+        py_xmeas = py_proc.xmeas
+
+        # Key measurements should be similar (first 22 are real-time, rest are sampled)
+        # Check a few key ones
+        key_indices = [6, 7, 8, 10, 11, 12, 17]  # Pressures, levels, temperatures
+        for i in key_indices:
+            if abs(py_xmeas[i]) > 0.01:
+                rel_error = abs(jax_xmeas[i] - py_xmeas[i]) / abs(py_xmeas[i])
+                assert rel_error < 0.5, f"Measurement {i}: JAX={jax_xmeas[i]}, Python={py_xmeas[i]}"
+
+    def test_wrapper_produces_similar_simulation(self):
+        """Test that wrapper produces similar simulation to Python backend."""
+        from tep.jax_backend import JaxTEProcessWrapper
+        from tep.python_backend import PythonTEProcess
+
+        # Initialize both backends with same seed
+        jax_wrapper = JaxTEProcessWrapper(random_seed=12345)
+        jax_wrapper.initialize()
+
+        py_proc = PythonTEProcess(random_seed=12345)
+        py_proc.initialize()
+
+        # Run for 10 steps
+        for _ in range(10):
+            jax_wrapper.step()
+            py_proc.step()
+
+        # Compare states - should be similar but not identical due to random differences
+        jax_yy = jax_wrapper.yy
+        py_yy = py_proc.yy
+
+        # All state values should be finite
+        assert np.all(np.isfinite(jax_yy))
+        assert np.all(np.isfinite(py_yy))
+
+        # States should be within same order of magnitude
+        for i in range(50):
+            if abs(py_yy[i]) > 0.1:
+                rel_error = abs(jax_yy[i] - py_yy[i]) / abs(py_yy[i])
+                assert rel_error < 1.0, f"State {i} diverged: JAX={jax_yy[i]}, Python={py_yy[i]}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

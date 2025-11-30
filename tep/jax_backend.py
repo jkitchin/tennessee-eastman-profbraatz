@@ -646,10 +646,10 @@ class JaxTEProcess:
         state: TEPState,
         key: jax.Array
     ) -> Tuple[TEPState, jax.Array]:
-        """Compute state derivatives (placeholder).
+        """Compute state derivatives.
 
-        This is the core simulation function that will be implemented
-        to compute all process dynamics using JAX-compatible operations.
+        This is the core simulation function that computes all process
+        dynamics using JAX-compatible operations.
 
         Parameters
         ----------
@@ -661,13 +661,708 @@ class JaxTEProcess:
         Returns
         -------
         state : TEPState
-            State with updated derivatives (yp).
+            State with updated derivatives (yp) and updated sub-states.
         key : jax.Array
             Updated random key.
         """
-        # TODO: Implement full TEFUNC logic with JAX operations
-        # For now, return zero derivatives (placeholder)
-        state = state._replace(yp=jnp.zeros(self._nn))
+        const = self._const
+        time = state.time
+        yy = state.yy
+        idv = state.idv
+        walks = state.walks
+        streams = state.streams
+
+        # Normalize IDV values to 0 or 1
+        idv = jnp.where(idv > 0, 1, 0)
+
+        # Map IDV to walk indices
+        idvwlk = jnp.array([
+            idv[7],   # IDV(8)
+            idv[7],   # IDV(8)
+            idv[8],   # IDV(9)
+            idv[9],   # IDV(10)
+            idv[10],  # IDV(11)
+            idv[11],  # IDV(12)
+            idv[12],  # IDV(13)
+            idv[12],  # IDV(13)
+            idv[15],  # IDV(16)
+            idv[16],  # IDV(17)
+            idv[17],  # IDV(18)
+            idv[19],  # IDV(20)
+        ], dtype=jnp.int32)
+        walks = walks._replace(idvwlk=idvwlk)
+
+        # Update random walks for disturbances 0-8
+        # Using lax.fori_loop for JIT compatibility
+        def update_walk_0_8(i, carry):
+            walks, key = carry
+            hwlk = walks.tnext[i] - walks.tlast[i]
+            swlk = walks.adist[i] + hwlk * (walks.bdist[i] + hwlk * (walks.cdist[i] + hwlk * walks.ddist[i]))
+            spwlk = walks.bdist[i] + hwlk * (2.0 * walks.cdist[i] + 3.0 * hwlk * walks.ddist[i])
+
+            # Conditionally update if time >= tnext[i]
+            should_update = time >= walks.tnext[i]
+            new_tlast = jnp.where(should_update, walks.tnext[i], walks.tlast[i])
+            walks = walks._replace(tlast=walks.tlast.at[i].set(new_tlast))
+
+            # Call tesub5 conditionally
+            walks_updated, key_new = self._tesub5(walks, i, swlk, spwlk, walks.idvwlk[i], key)
+
+            # Select updated or original walks based on condition
+            walks = jax.tree.map(
+                lambda old, new: jnp.where(should_update, new, old),
+                walks,
+                walks_updated
+            )
+            key = jnp.where(should_update, key_new, key)
+            return walks, key
+
+        walks, key = lax.fori_loop(0, 9, update_walk_0_8, (walks, key))
+
+        # Update random walks for disturbances 9-11 (special handling)
+        def update_walk_9_11(i, carry):
+            walks, key = carry
+            hwlk = walks.tnext[i] - walks.tlast[i]
+            swlk = walks.adist[i] + hwlk * (walks.bdist[i] + hwlk * (walks.cdist[i] + hwlk * walks.ddist[i]))
+            spwlk = walks.bdist[i] + hwlk * (2.0 * walks.cdist[i] + 3.0 * hwlk * walks.ddist[i])
+
+            should_update = time >= walks.tnext[i]
+            new_tlast = jnp.where(should_update, walks.tnext[i], walks.tlast[i])
+
+            # Special case: if swlk > 0.1
+            key, k1 = jax.random.split(key)
+            r1 = 2.0 * jax.random.uniform(k1) - 1.0
+            hwlk_new = walks.hspan[i] * r1 + walks.hzero[i]
+
+            # Case 1: swlk > 0.1
+            adist_case1 = swlk
+            bdist_case1 = spwlk
+            cdist_case1 = -(3.0 * swlk + 0.2 * spwlk) / 0.01
+            ddist_case1 = (2.0 * swlk + 0.1 * spwlk) / 0.001
+            tnext_case1 = new_tlast + 0.1
+
+            # Case 2: swlk <= 0.1
+            adist_case2 = 0.0
+            bdist_case2 = 0.0
+            cdist_case2 = walks.idvwlk[i].astype(jnp.float64) / (hwlk_new ** 2)
+            ddist_case2 = 0.0
+            tnext_case2 = new_tlast + hwlk_new
+
+            # Select based on swlk
+            use_case1 = swlk > 0.1
+            new_adist = jnp.where(use_case1, adist_case1, adist_case2)
+            new_bdist = jnp.where(use_case1, bdist_case1, bdist_case2)
+            new_cdist = jnp.where(use_case1, cdist_case1, cdist_case2)
+            new_ddist = jnp.where(use_case1, ddist_case1, ddist_case2)
+            new_tnext = jnp.where(use_case1, tnext_case1, tnext_case2)
+
+            # Only update if should_update
+            walks = walks._replace(
+                tlast=walks.tlast.at[i].set(jnp.where(should_update, new_tlast, walks.tlast[i])),
+                adist=walks.adist.at[i].set(jnp.where(should_update, new_adist, walks.adist[i])),
+                bdist=walks.bdist.at[i].set(jnp.where(should_update, new_bdist, walks.bdist[i])),
+                cdist=walks.cdist.at[i].set(jnp.where(should_update, new_cdist, walks.cdist[i])),
+                ddist=walks.ddist.at[i].set(jnp.where(should_update, new_ddist, walks.ddist[i])),
+                tnext=walks.tnext.at[i].set(jnp.where(should_update, new_tnext, walks.tnext[i])),
+            )
+            return walks, key
+
+        walks, key = lax.fori_loop(9, 12, update_walk_9_11, (walks, key))
+
+        # Reset walks at time = 0
+        def reset_walks(walks):
+            return walks._replace(
+                adist=walks.szero,
+                bdist=jnp.zeros(12),
+                cdist=jnp.zeros(12),
+                ddist=jnp.zeros(12),
+                tlast=jnp.zeros(12),
+                tnext=jnp.full(12, 0.1),
+            )
+
+        walks = lax.cond(time == 0.0, reset_walks, lambda w: w, walks)
+
+        # Apply disturbances to feed compositions
+        xst = streams.xst
+        tst = streams.tst
+
+        xst_0_3 = self._tesub8(walks, 1, time) - idv[0] * 0.03 - idv[1] * 2.43719e-3
+        xst_1_3 = self._tesub8(walks, 2, time) + idv[1] * 0.005
+        xst_2_3 = 1.0 - xst_0_3 - xst_1_3
+
+        xst = xst.at[0, 3].set(xst_0_3)
+        xst = xst.at[1, 3].set(xst_1_3)
+        xst = xst.at[2, 3].set(xst_2_3)
+
+        tst = tst.at[0].set(self._tesub8(walks, 3, time) + idv[2] * 5.0)
+        tst = tst.at[3].set(self._tesub8(walks, 4, time))
+
+        tcwr = self._tesub8(walks, 5, time) + idv[3] * 5.0
+        tcws = self._tesub8(walks, 6, time) + idv[4] * 5.0
+        r1f = self._tesub8(walks, 7, time)
+        r2f = self._tesub8(walks, 8, time)
+
+        streams = streams._replace(xst=xst, tst=tst)
+
+        # Extract state variables from yy
+        # Reactor: non-condensables in vapor (0-2), condensables in liquid (3-7)
+        ucvr = jnp.array([yy[0], yy[1], yy[2], 0.0, 0.0, 0.0, 0.0, 0.0])
+        uclr = jnp.array([0.0, 0.0, 0.0, yy[3], yy[4], yy[5], yy[6], yy[7]])
+
+        # Separator
+        ucvs = jnp.array([yy[9], yy[10], yy[11], 0.0, 0.0, 0.0, 0.0, 0.0])
+        ucls = jnp.array([0.0, 0.0, 0.0, yy[12], yy[13], yy[14], yy[15], yy[16]])
+
+        # Condenser
+        uclc = yy[18:26]
+
+        # Compressor
+        ucvv = yy[27:35]
+
+        # Energy states
+        etr = yy[8]
+        ets = yy[17]
+        etc = yy[26]
+        etv = yy[35]
+
+        # Cooling water temperatures
+        twr = yy[36]
+        tws = yy[37]
+
+        # Valve positions
+        vpos = yy[38:50]
+
+        # Calculate total holdups
+        utlr = jnp.sum(uclr)
+        utls = jnp.sum(ucls)
+        utlc = jnp.sum(uclc)
+        utvv = jnp.sum(ucvv)
+
+        # Calculate mole fractions (with guards against division by zero)
+        xlr = jnp.where(utlr > 0, uclr / utlr, jnp.zeros(8))
+        xls = jnp.where(utls > 0, ucls / utls, jnp.zeros(8))
+        xlc = jnp.where(utlc > 0, uclc / utlc, jnp.zeros(8))
+        xvv = jnp.where(utvv > 0, ucvv / utvv, jnp.zeros(8))
+
+        # Calculate specific energies
+        esr = jnp.where(utlr > 0, etr / utlr, 0.0)
+        ess = jnp.where(utls > 0, ets / utls, 0.0)
+        esc = jnp.where(utlc > 0, etc / utlc, 0.0)
+        esv = jnp.where(utvv > 0, etv / utvv, 0.0)
+
+        # Calculate temperatures from enthalpies
+        tcr_init = jnp.where(state.reactor.tcr > 0, state.reactor.tcr, 120.0)
+        tcs_init = jnp.where(state.separator.tcs > 0, state.separator.tcs, 80.0)
+        tcc_init = jnp.where(state.stripper.tcc > 0, state.stripper.tcc, 65.0)
+        tcv_init = jnp.where(state.compressor.tcv > 0, state.compressor.tcv, 100.0)
+
+        tcr = self._tesub2(xlr, tcr_init, esr, 0)
+        tkr = tcr + 273.15
+        tcs = self._tesub2(xls, tcs_init, ess, 0)
+        tks = tcs + 273.15
+        tcc = self._tesub2(xlc, tcc_init, esc, 0)
+        tcv = self._tesub2(xvv, tcv_init, esv, 2)
+        tkv = tcv + 273.15
+
+        # Calculate densities
+        dlr = self._tesub4(xlr, tcr)
+        dls = self._tesub4(xls, tcs)
+        dlc = self._tesub4(xlc, tcc)
+
+        # Calculate volumes
+        vlr = jnp.where(dlr > 0, utlr / dlr, 0.0)
+        vls = jnp.where(dls > 0, utls / dls, 0.0)
+        vlc = jnp.where(dlc > 0, utlc / dlc, 0.0)
+        vtr = 1300.0  # Reactor total volume
+        vts = 3500.0  # Separator total volume
+        vtc = 156.5   # Stripper total volume
+        vtv = 5000.0  # Compressor volume
+        vvr = vtr - vlr
+        vvs = vts - vls
+
+        # Gas constant
+        rg = 998.9
+
+        # Calculate pressures (reactor and separator)
+        # Non-condensable components (ideal gas)
+        ppr_nc = jnp.where(vvr > 0, ucvr[:3] * rg * tkr / vvr, jnp.zeros(3))
+        pps_nc = jnp.where(vvs > 0, ucvs[:3] * rg * tks / vvs, jnp.zeros(3))
+
+        # Condensable components (vapor pressure)
+        vpr_r = jnp.exp(const.avp[3:] + const.bvp[3:] / (tcr + const.cvp[3:]))
+        ppr_c = vpr_r * xlr[3:]
+        vpr_s = jnp.exp(const.avp[3:] + const.bvp[3:] / (tcs + const.cvp[3:]))
+        pps_c = vpr_s * xls[3:]
+
+        # Combine partial pressures
+        ppr = jnp.concatenate([ppr_nc, ppr_c])
+        pps = jnp.concatenate([pps_nc, pps_c])
+        ptr = jnp.sum(ppr)
+        pts = jnp.sum(pps)
+
+        # Compressor pressure
+        ptv = jnp.where(vtv > 0, utvv * rg * tkv / vtv, 0.0)
+
+        # Calculate vapor compositions
+        xvr = jnp.where(ptr > 0, ppr / ptr, jnp.zeros(8))
+        xvs = jnp.where(pts > 0, pps / pts, jnp.zeros(8))
+
+        # Calculate total vapor holdups
+        utvr = jnp.where((rg * tkr) > 0, ptr * vvr / rg / tkr, 0.0)
+        utvs = jnp.where((rg * tks) > 0, pts * vvs / rg / tks, 0.0)
+
+        # Update condensable vapor holdups
+        ucvr = ucvr.at[3:].set(utvr * xvr[3:])
+        ucvs = ucvs.at[3:].set(utvs * xvs[3:])
+
+        # Reaction kinetics
+        rr = jnp.zeros(4)
+        rr = rr.at[0].set(jnp.exp(31.5859536 - 40000.0 / 1.987 / tkr) * r1f)
+        rr = rr.at[1].set(jnp.exp(3.00094014 - 20000.0 / 1.987 / tkr) * r2f)
+        rr = rr.at[2].set(jnp.exp(53.4060443 - 60000.0 / 1.987 / tkr))
+        rr = rr.at[3].set(rr[2] * 0.767488334)
+
+        # Partial pressure terms
+        pp_valid = (ppr[0] > 0.0) & (ppr[2] > 0.0)
+        r1f_pp = jnp.where(pp_valid, ppr[0] ** 1.1544, 0.0)
+        r2f_pp = jnp.where(pp_valid, ppr[2] ** 0.3735, 0.0)
+
+        rr = rr.at[0].set(jnp.where(pp_valid, rr[0] * r1f_pp * r2f_pp * ppr[3], 0.0))
+        rr = rr.at[1].set(jnp.where(pp_valid, rr[1] * r1f_pp * r2f_pp * ppr[4], 0.0))
+        rr = rr.at[2].set(rr[2] * ppr[0] * ppr[4])
+        rr = rr.at[3].set(rr[3] * ppr[0] * ppr[3])
+
+        # Scale by vapor volume
+        rr = rr * vvr
+
+        # Component reaction rates
+        crxr = jnp.array([
+            -rr[0] - rr[1] - rr[2],      # Component 0 (A)
+            0.0,                          # Component 1 (B)
+            -rr[0] - rr[1],               # Component 2 (C)
+            -rr[0] - 1.5 * rr[3],         # Component 3 (D)
+            -rr[1] - rr[2],               # Component 4 (E)
+            rr[2] + rr[3],                # Component 5 (F)
+            rr[0],                        # Component 6 (G)
+            rr[1],                        # Component 7 (H)
+        ])
+
+        # Heat of reaction
+        htr = state.htr
+        rh = rr[0] * htr[0] + rr[1] * htr[1]
+
+        # Stream compositions and molecular weights
+        xst = xst.at[:, 5].set(xvv)
+        xst = xst.at[:, 7].set(xvr)
+        xst = xst.at[:, 8].set(xvs)
+        xst = xst.at[:, 9].set(xvs)
+        xst = xst.at[:, 10].set(xls)
+        xst = xst.at[:, 12].set(xlc)
+
+        xmws = jnp.zeros(13)
+        xmws = xmws.at[0].set(jnp.sum(xst[:, 0] * const.xmw))
+        xmws = xmws.at[1].set(jnp.sum(xst[:, 1] * const.xmw))
+        xmws = xmws.at[5].set(jnp.sum(xst[:, 5] * const.xmw))
+        xmws = xmws.at[7].set(jnp.sum(xst[:, 7] * const.xmw))
+        xmws = xmws.at[8].set(jnp.sum(xst[:, 8] * const.xmw))
+        xmws = xmws.at[9].set(jnp.sum(xst[:, 9] * const.xmw))
+
+        # Stream temperatures
+        tst = tst.at[5].set(tcv)
+        tst = tst.at[7].set(tcr)
+        tst = tst.at[8].set(tcs)
+        tst = tst.at[9].set(tcs)
+        tst = tst.at[10].set(tcs)
+        tst = tst.at[12].set(tcc)
+
+        # Calculate stream enthalpies
+        hst = jnp.zeros(13)
+        hst = hst.at[0].set(self._tesub1(xst[:, 0], tst[0], 1))
+        hst = hst.at[1].set(self._tesub1(xst[:, 1], tst[1], 1))
+        hst = hst.at[2].set(self._tesub1(xst[:, 2], tst[2], 1))
+        hst = hst.at[3].set(self._tesub1(xst[:, 3], tst[3], 1))
+        hst = hst.at[5].set(self._tesub1(xst[:, 5], tst[5], 1))
+        hst = hst.at[7].set(self._tesub1(xst[:, 7], tst[7], 1))
+        hst = hst.at[8].set(self._tesub1(xst[:, 8], tst[8], 1))
+        hst = hst.at[9].set(hst[8])
+        hst = hst.at[10].set(self._tesub1(xst[:, 10], tst[10], 0))
+        hst = hst.at[12].set(self._tesub1(xst[:, 12], tst[12], 0))
+
+        # Calculate flows
+        vrng = state.valves.vrng
+        ftm = jnp.zeros(13)
+        ftm = ftm.at[0].set(vpos[0] * vrng[0] / 100.0)
+        ftm = ftm.at[1].set(vpos[1] * vrng[1] / 100.0)
+        ftm = ftm.at[2].set(vpos[2] * (1.0 - idv[5]) * vrng[2] / 100.0)
+        ftm = ftm.at[3].set(vpos[3] * (1.0 - idv[6] * 0.2) * vrng[3] / 100.0 + 1.0e-10)
+        ftm = ftm.at[10].set(vpos[6] * vrng[6] / 100.0)
+        ftm = ftm.at[12].set(vpos[7] * vrng[7] / 100.0)
+
+        uac = vpos[8] * vrng[8] * (1.0 + self._tesub8(walks, 9, time)) / 100.0
+        fwr = vpos[9] * vrng[9] / 100.0
+        fws = vpos[10] * vrng[10] / 100.0
+        agsp = (vpos[11] + 150.0) / 100.0
+
+        # Pressure-driven flows
+        dlp = jnp.maximum(ptv - ptr, 0.0)
+        flms = 1937.6 * jnp.sqrt(dlp)
+        ftm = ftm.at[5].set(jnp.where(xmws[5] > 0, flms / xmws[5], 0.0))
+
+        dlp = jnp.maximum(ptr - pts, 0.0)
+        flms = 4574.21 * jnp.sqrt(dlp) * (1.0 - 0.25 * self._tesub8(walks, 12, time))
+        ftm = ftm.at[7].set(jnp.where(xmws[7] > 0, flms / xmws[7], 0.0))
+
+        dlp = jnp.maximum(pts - 760.0, 0.0)
+        flms = vpos[5] * 0.151169 * jnp.sqrt(dlp)
+        ftm = ftm.at[9].set(jnp.where(xmws[9] > 0, flms / xmws[9], 0.0))
+
+        # Compressor
+        cpflmx = 280275.0
+        cpprmx = 1.3
+        pr = jnp.where(pts > 0, ptv / pts, 1.0)
+        pr = jnp.clip(pr, 1.0, cpprmx)
+        flcoef = cpflmx / 1.197
+        flms = cpflmx + flcoef * (1.0 - pr ** 3)
+        cpdh = jnp.where(
+            (xmws[8] * pts) > 0,
+            flms * (tcs + 273.15) * 1.8e-6 * 1.9872 * (ptv - pts) / (xmws[8] * pts),
+            0.0
+        )
+
+        dlp = jnp.maximum(ptv - pts, 0.0)
+        flms = flms - vpos[4] * 53.349 * jnp.sqrt(dlp)
+        flms = jnp.maximum(flms, 1.0e-3)
+        ftm = ftm.at[8].set(jnp.where(xmws[8] > 0, flms / xmws[8], 0.0))
+        hst = hst.at[8].set(jnp.where(ftm[8] > 0, hst[8] + cpdh / ftm[8], hst[8]))
+
+        # Component flows
+        fcm = jnp.zeros((8, 13))
+        for j in [0, 1, 2, 3, 5, 7, 8, 9, 10, 12]:
+            fcm = fcm.at[:, j].set(xst[:, j] * ftm[j])
+
+        # Stripper separation
+        tmpfac = jnp.where(
+            tcc > 170.0,
+            tcc - 120.262,
+            jnp.where(
+                tcc < 5.292,
+                0.1,
+                363.744 / (177.0 - tcc) - 2.22579488
+            )
+        )
+        vovrl = jnp.where(ftm[10] > 0.1, ftm[3] / ftm[10] * tmpfac, 0.0)
+
+        sfr = streams.sfr
+        sfr_updated = jnp.array([
+            sfr[0], sfr[1], sfr[2],
+            jnp.where(ftm[10] > 0.1, 8.5010 * vovrl / (1.0 + 8.5010 * vovrl), 0.9999),
+            jnp.where(ftm[10] > 0.1, 11.402 * vovrl / (1.0 + 11.402 * vovrl), 0.999),
+            jnp.where(ftm[10] > 0.1, 11.795 * vovrl / (1.0 + 11.795 * vovrl), 0.999),
+            jnp.where(ftm[10] > 0.1, 0.0480 * vovrl / (1.0 + 0.0480 * vovrl), 0.99),
+            jnp.where(ftm[10] > 0.1, 0.0242 * vovrl / (1.0 + 0.0242 * vovrl), 0.98),
+        ])
+
+        # Stripper inlet flows
+        fin = fcm[:, 3] + fcm[:, 10]
+
+        # Stripper separation
+        fcm = fcm.at[:, 4].set(sfr_updated * fin)
+        fcm = fcm.at[:, 11].set(fin - fcm[:, 4])
+        ftm = ftm.at[4].set(jnp.sum(fcm[:, 4]))
+        ftm = ftm.at[11].set(jnp.sum(fcm[:, 11]))
+
+        # Stream compositions
+        xst = xst.at[:, 4].set(jnp.where(ftm[4] > 0, fcm[:, 4] / ftm[4], jnp.zeros(8)))
+        xst = xst.at[:, 11].set(jnp.where(ftm[11] > 0, fcm[:, 11] / ftm[11], jnp.zeros(8)))
+
+        tst = tst.at[4].set(tcc)
+        tst = tst.at[11].set(tcc)
+        hst = hst.at[4].set(self._tesub1(xst[:, 4], tst[4], 1))
+        hst = hst.at[11].set(self._tesub1(xst[:, 11], tst[11], 0))
+
+        # Stream 7 = Stream 6
+        ftm = ftm.at[6].set(ftm[5])
+        hst = hst.at[6].set(hst[5])
+        tst = tst.at[6].set(tst[5])
+        xst = xst.at[:, 6].set(xst[:, 5])
+        fcm = fcm.at[:, 6].set(fcm[:, 5])
+
+        # Heat transfer calculations
+        uarlev = jnp.where(
+            vlr / 7.8 > 50.0,
+            1.0,
+            jnp.where(vlr / 7.8 < 10.0, 0.0, 0.025 * vlr / 7.8 - 0.25)
+        )
+        hwr = 7060.0
+        hws = 11138.0
+
+        uar = uarlev * (-0.5 * agsp ** 2 + 2.75 * agsp - 2.5) * 855490.0e-6
+        qur = uar * (twr - tcr) * (1.0 - 0.35 * self._tesub8(walks, 10, time))
+
+        uas = 0.404655 * (1.0 - 1.0 / (1.0 + (ftm[7] / 3528.73) ** 4))
+        qus = uas * (tws - tst[7]) * (1.0 - 0.25 * self._tesub8(walks, 11, time))
+
+        quc = jnp.where(tcc < 100.0, uac * (100.0 - tcc), 0.0)
+
+        # Calculate measurements (without noise first)
+        xmeas = jnp.zeros(41)
+        xmeas = xmeas.at[0].set(ftm[2] * 0.359 / 35.3145)
+        xmeas = xmeas.at[1].set(ftm[0] * xmws[0] * 0.454)
+        xmeas = xmeas.at[2].set(ftm[1] * xmws[1] * 0.454)
+        xmeas = xmeas.at[3].set(ftm[3] * 0.359 / 35.3145)
+        xmeas = xmeas.at[4].set(ftm[8] * 0.359 / 35.3145)
+        xmeas = xmeas.at[5].set(ftm[5] * 0.359 / 35.3145)
+        xmeas = xmeas.at[6].set((ptr - 760.0) / 760.0 * 101.325)
+        xmeas = xmeas.at[7].set((vlr - 84.6) / 666.7 * 100.0)
+        xmeas = xmeas.at[8].set(tcr)
+        xmeas = xmeas.at[9].set(ftm[9] * 0.359 / 35.3145)
+        xmeas = xmeas.at[10].set(tcs)
+        xmeas = xmeas.at[11].set((vls - 27.5) / 290.0 * 100.0)
+        xmeas = xmeas.at[12].set((pts - 760.0) / 760.0 * 101.325)
+        xmeas = xmeas.at[13].set(jnp.where(dls > 0, ftm[10] / dls / 35.3145, 0.0))
+        xmeas = xmeas.at[14].set((vlc - 78.25) / vtc * 100.0)
+        xmeas = xmeas.at[15].set((ptv - 760.0) / 760.0 * 101.325)
+        xmeas = xmeas.at[16].set(jnp.where(dlc > 0, ftm[12] / dlc / 35.3145, 0.0))
+        xmeas = xmeas.at[17].set(tcc)
+        xmeas = xmeas.at[18].set(quc * 1.04e3 * 0.454)
+        xmeas = xmeas.at[19].set(cpdh * 0.29307e3)
+        xmeas = xmeas.at[20].set(twr)
+        xmeas = xmeas.at[21].set(tws)
+
+        # Safety shutdown check
+        isd = (
+            (xmeas[6] > 3000.0) |
+            (vlr / 35.3145 > 24.0) |
+            (vlr / 35.3145 < 2.0) |
+            (xmeas[8] > 175.0) |
+            (vls / 35.3145 > 12.0) |
+            (vls / 35.3145 < 1.0) |
+            (vlc / 35.3145 > 8.0) |
+            (vlc / 35.3145 < 1.0)
+        )
+
+        # Add measurement noise (only after time 0 and not shutdown)
+        def add_noise(carry):
+            xmeas, key = carry
+            def add_noise_single(i, xmeas_key):
+                xmeas, key = xmeas_key
+                noise, key = self._tesub6(key, state.measurements.xns[i])
+                xmeas = xmeas.at[i].set(xmeas[i] + noise)
+                return xmeas, key
+            xmeas, key = lax.fori_loop(0, 22, add_noise_single, (xmeas, key))
+            return xmeas, key
+
+        def no_noise(carry):
+            return carry
+
+        should_add_noise = (time > 0.0) & (~isd)
+        xmeas, key = lax.cond(should_add_noise, add_noise, no_noise, (xmeas, key))
+
+        # Sampled composition measurements
+        xcmp = jnp.zeros(41)
+        xcmp = xcmp.at[22].set(xst[0, 6] * 100.0)
+        xcmp = xcmp.at[23].set(xst[1, 6] * 100.0)
+        xcmp = xcmp.at[24].set(xst[2, 6] * 100.0)
+        xcmp = xcmp.at[25].set(xst[3, 6] * 100.0)
+        xcmp = xcmp.at[26].set(xst[4, 6] * 100.0)
+        xcmp = xcmp.at[27].set(xst[5, 6] * 100.0)
+        xcmp = xcmp.at[28].set(xst[0, 9] * 100.0)
+        xcmp = xcmp.at[29].set(xst[1, 9] * 100.0)
+        xcmp = xcmp.at[30].set(xst[2, 9] * 100.0)
+        xcmp = xcmp.at[31].set(xst[3, 9] * 100.0)
+        xcmp = xcmp.at[32].set(xst[4, 9] * 100.0)
+        xcmp = xcmp.at[33].set(xst[5, 9] * 100.0)
+        xcmp = xcmp.at[34].set(xst[6, 9] * 100.0)
+        xcmp = xcmp.at[35].set(xst[7, 9] * 100.0)
+        xcmp = xcmp.at[36].set(xst[3, 12] * 100.0)
+        xcmp = xcmp.at[37].set(xst[4, 12] * 100.0)
+        xcmp = xcmp.at[38].set(xst[5, 12] * 100.0)
+        xcmp = xcmp.at[39].set(xst[6, 12] * 100.0)
+        xcmp = xcmp.at[40].set(xst[7, 12] * 100.0)
+
+        # Handle delayed measurements
+        meas = state.measurements
+        xdel = meas.xdel
+        tgas = meas.tgas
+        tprod = meas.tprod
+
+        # Initialize at time 0
+        def init_delays(carry):
+            xmeas, xdel, tgas, tprod = carry
+            xdel = xdel.at[22:41].set(xcmp[22:41])
+            xmeas = xmeas.at[22:41].set(xcmp[22:41])
+            return xmeas, xdel, 0.1, 0.25
+
+        def keep_delays(carry):
+            return carry
+
+        xmeas, xdel, tgas, tprod = lax.cond(
+            time == 0.0,
+            init_delays,
+            keep_delays,
+            (xmeas, xdel, tgas, tprod)
+        )
+
+        # Gas sampling update
+        def update_gas(carry):
+            xmeas, xdel, tgas, key = carry
+            def add_gas_noise(i, xmeas_xdel_key):
+                xmeas, xdel, key = xmeas_xdel_key
+                noise, key = self._tesub6(key, meas.xns[i])
+                xmeas = xmeas.at[i].set(xdel[i] + noise)
+                xdel = xdel.at[i].set(xcmp[i])
+                return xmeas, xdel, key
+            xmeas, xdel, key = lax.fori_loop(22, 36, add_gas_noise, (xmeas, xdel, key))
+            return xmeas, xdel, tgas + 0.1, key
+
+        def no_gas_update(carry):
+            return carry
+
+        xmeas, xdel, tgas, key = lax.cond(
+            time >= tgas,
+            update_gas,
+            no_gas_update,
+            (xmeas, xdel, tgas, key)
+        )
+
+        # Product sampling update
+        def update_prod(carry):
+            xmeas, xdel, tprod, key = carry
+            def add_prod_noise(i, xmeas_xdel_key):
+                xmeas, xdel, key = xmeas_xdel_key
+                noise, key = self._tesub6(key, meas.xns[i])
+                xmeas = xmeas.at[i].set(xdel[i] + noise)
+                xdel = xdel.at[i].set(xcmp[i])
+                return xmeas, xdel, key
+            xmeas, xdel, key = lax.fori_loop(36, 41, add_prod_noise, (xmeas, xdel, key))
+            return xmeas, xdel, tprod + 0.25, key
+
+        def no_prod_update(carry):
+            return carry
+
+        xmeas, xdel, tprod, key = lax.cond(
+            time >= tprod,
+            update_prod,
+            no_prod_update,
+            (xmeas, xdel, tprod, key)
+        )
+
+        # State derivatives
+        yp = jnp.zeros(50)
+
+        # Reactor component balances (0-7)
+        yp = yp.at[0:8].set(fcm[:, 6] - fcm[:, 7] + crxr)
+
+        # Separator component balances (9-16)
+        yp = yp.at[9:17].set(fcm[:, 7] - fcm[:, 8] - fcm[:, 9] - fcm[:, 10])
+
+        # Condenser component balances (18-25)
+        yp = yp.at[18:26].set(fcm[:, 11] - fcm[:, 12])
+
+        # Compressor component balances (27-34)
+        yp = yp.at[27:35].set(
+            fcm[:, 0] + fcm[:, 1] + fcm[:, 2] + fcm[:, 4] + fcm[:, 8] - fcm[:, 5]
+        )
+
+        # Energy balances
+        yp = yp.at[8].set(hst[6] * ftm[6] - hst[7] * ftm[7] + rh + qur)
+        yp = yp.at[17].set(
+            hst[7] * ftm[7] - hst[8] * ftm[8] - hst[9] * ftm[9] - hst[10] * ftm[10] + qus
+        )
+        yp = yp.at[26].set(
+            hst[3] * ftm[3] + hst[10] * ftm[10] - hst[4] * ftm[4] - hst[12] * ftm[12] + quc
+        )
+        yp = yp.at[35].set(
+            hst[0] * ftm[0] + hst[1] * ftm[1] + hst[2] * ftm[2] +
+            hst[4] * ftm[4] + hst[8] * ftm[8] - hst[5] * ftm[5]
+        )
+
+        # Cooling water temperatures
+        yp = yp.at[36].set((fwr * 500.53 * (tcwr - twr) - qur * 1.0e6 / 1.8) / hwr)
+        yp = yp.at[37].set((fws * 500.53 * (tcws - tws) - qus * 1.0e6 / 1.8) / hws)
+
+        # Valve sticking
+        ivst = state.valves.ivst
+        ivst = ivst.at[9].set(idv[13])   # IDV(14)
+        ivst = ivst.at[10].set(idv[14])  # IDV(15)
+        ivst = ivst.at[4].set(idv[18])   # IDV(19)
+        ivst = ivst.at[6].set(idv[18])   # IDV(19)
+        ivst = ivst.at[7].set(idv[18])   # IDV(19)
+        ivst = ivst.at[8].set(idv[18])   # IDV(19)
+
+        # Valve dynamics
+        vcv = state.valves.vcv
+        vst = state.valves.vst
+        vtau = state.valves.vtau
+        xmv = state.xmv
+
+        def valve_update(i, carry):
+            vcv, yp = carry
+            should_update = (time == 0.0) | (jnp.abs(vcv[i] - xmv[i]) > vst[i] * ivst[i])
+            new_vcv = jnp.where(should_update, xmv[i], vcv[i])
+            new_vcv = jnp.clip(new_vcv, 0.0, 100.0)
+            vcv = vcv.at[i].set(new_vcv)
+            yp = yp.at[38 + i].set((new_vcv - vpos[i]) / vtau[i])
+            return vcv, yp
+
+        vcv, yp = lax.fori_loop(0, 12, valve_update, (vcv, yp))
+
+        # Shutdown: zero all derivatives
+        yp = jnp.where(isd, jnp.zeros(50), yp)
+
+        # Update all sub-states
+        reactor = state.reactor._replace(
+            uclr=uclr, ucvr=ucvr, utlr=utlr, utvr=utvr,
+            xlr=xlr, xvr=xvr, etr=etr, esr=esr,
+            tcr=tcr, tkr=tkr, dlr=dlr, vlr=vlr, vvr=vvr, vtr=vtr,
+            ptr=ptr, ppr=ppr, crxr=crxr, rr=rr, rh=rh,
+            fwr=fwr, twr=twr, qur=qur, uar=uar,
+        )
+
+        separator = state.separator._replace(
+            ucls=ucls, ucvs=ucvs, utls=utls, utvs=utvs,
+            xls=xls, xvs=xvs, ets=ets, ess=ess,
+            tcs=tcs, tks=tks, dls=dls, vls=vls, vvs=vvs, vts=vts,
+            pts=pts, pps=pps, fws=fws, tws=tws, qus=qus,
+        )
+
+        stripper = state.stripper._replace(
+            uclc=uclc, utlc=utlc, xlc=xlc,
+            etc=etc, esc=esc, tcc=tcc, dlc=dlc, vlc=vlc, vtc=vtc, quc=quc,
+        )
+
+        compressor = state.compressor._replace(
+            ucvv=ucvv, utvv=utvv, xvv=xvv,
+            etv=etv, esv=esv, tcv=tcv, tkv=tkv, vtv=vtv, ptv=ptv,
+            cpdh=cpdh,
+        )
+
+        valves = state.valves._replace(vcv=vcv, ivst=ivst)
+
+        streams = streams._replace(
+            ftm=ftm, fcm=fcm, xst=xst, xmws=xmws, hst=hst, tst=tst, sfr=sfr_updated,
+        )
+
+        measurements = meas._replace(xmeas=xmeas, xdel=xdel, tgas=tgas, tprod=tprod)
+
+        # Create updated state
+        state = state._replace(
+            yy=yy,
+            yp=yp,
+            reactor=reactor,
+            separator=separator,
+            stripper=stripper,
+            compressor=compressor,
+            valves=valves,
+            streams=streams,
+            walks=walks,
+            measurements=measurements,
+            idv=idv,
+            tcwr=tcwr,
+            tcws=tcws,
+            agsp=agsp,
+        )
+
         return state, key
 
     # =========================================================================
@@ -883,6 +1578,96 @@ class JaxTEProcess:
         uniforms = jax.random.uniform(subkey, shape=(12,))
         noise = (jnp.sum(uniforms) - 6.0) * std
         return noise, key
+
+    def _tesub5(
+        self,
+        walks: WalkState,
+        idx: int,
+        s: float,
+        sp: float,
+        idvflag: int,
+        key: jax.Array
+    ) -> Tuple[WalkState, jax.Array]:
+        """Generate next random walk interval (cubic spline parameters).
+
+        Parameters
+        ----------
+        walks : WalkState
+            Current walk state.
+        idx : int
+            Disturbance index (0-based).
+        s : float
+            Current signal value.
+        sp : float
+            Current signal derivative.
+        idvflag : int
+            Disturbance active flag (0 or 1).
+        key : jax.Array
+            JAX random key.
+
+        Returns
+        -------
+        walks : WalkState
+            Updated walk state.
+        key : jax.Array
+            Updated random key.
+        """
+        # Generate random values
+        key, k1, k2, k3 = jax.random.split(key, 4)
+        r1 = 2.0 * jax.random.uniform(k1) - 1.0  # Range [-1, 1]
+        r2 = 2.0 * jax.random.uniform(k2) - 1.0
+        r3 = 2.0 * jax.random.uniform(k3) - 1.0
+
+        # Calculate interval and target
+        h = walks.hspan[idx] * r1 + walks.hzero[idx]
+        s1 = walks.sspan[idx] * r2 * idvflag + walks.szero[idx]
+        s1p = walks.spspan[idx] * r3 * idvflag
+
+        # Calculate cubic spline coefficients
+        h2 = h * h
+        h3 = h2 * h
+        new_adist = walks.adist.at[idx].set(s)
+        new_bdist = walks.bdist.at[idx].set(sp)
+        new_cdist = walks.cdist.at[idx].set((3.0 * (s1 - s) - h * (s1p + 2.0 * sp)) / h2)
+        new_ddist = walks.ddist.at[idx].set((2.0 * (s - s1) + h * (s1p + sp)) / h3)
+        new_tnext = walks.tnext.at[idx].set(walks.tlast[idx] + h)
+
+        walks = walks._replace(
+            adist=new_adist,
+            bdist=new_bdist,
+            cdist=new_cdist,
+            ddist=new_ddist,
+            tnext=new_tnext,
+        )
+        return walks, key
+
+    def _tesub7(
+        self,
+        key: jax.Array,
+        signed: bool = True
+    ) -> Tuple[float, jax.Array]:
+        """Generate random number using JAX.
+
+        Replaces the LCG-based random number generator with JAX random.
+
+        Parameters
+        ----------
+        key : jax.Array
+            JAX random key.
+        signed : bool
+            If True, returns value in [-1, 1). If False, returns [0, 1).
+
+        Returns
+        -------
+        value : float
+            Random number.
+        key : jax.Array
+            Updated random key.
+        """
+        key, subkey = jax.random.split(key)
+        r = jax.random.uniform(subkey)
+        value = jnp.where(signed, 2.0 * r - 1.0, r)
+        return value, key
 
     def _tesub8(
         self,
