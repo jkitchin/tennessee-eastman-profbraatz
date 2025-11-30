@@ -428,8 +428,40 @@ def create_layout():
                                 html.Li("View measurements by unit: Feeds, Reactor, Separator, Stripper, Compositions"),
                             ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8'})
                         ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
-                                 'maxWidth': '500px', 'margin': '0 auto'})
-                    ], style={'textAlign': 'center', 'padding': '100px 20px'})
+                                 'maxWidth': '600px', 'margin': '0 auto', 'marginBottom': '20px'}),
+                        # References section
+                        html.Div([
+                            html.H4("References:", style={'color': '#34495e', 'marginBottom': '10px'}),
+                            html.Ul([
+                                html.Li([
+                                    "Downs, J.J. and Vogel, E.F. (1993). ",
+                                    html.I("A plant-wide industrial process control problem"),
+                                    ". Computers & Chemical Engineering, 17(3), 245-255. ",
+                                    html.A("DOI:10.1016/0098-1354(93)80018-I",
+                                          href="https://doi.org/10.1016/0098-1354(93)80018-I",
+                                          target="_blank", style={'color': '#3498db'})
+                                ]),
+                                html.Li([
+                                    "Ricker, N.L. (1996). ",
+                                    html.I("Decentralized control of the Tennessee Eastman Challenge Process"),
+                                    ". Journal of Process Control, 6(4), 205-221. ",
+                                    html.A("DOI:10.1016/0959-1524(96)00031-5",
+                                          href="https://doi.org/10.1016/0959-1524(96)00031-5",
+                                          target="_blank", style={'color': '#3498db'})
+                                ]),
+                                html.Li([
+                                    "Bathelt, A., Ricker, N.L., and Jelali, M. (2015). ",
+                                    html.I("Revision of the Tennessee Eastman Process Model"),
+                                    ". IFAC-PapersOnLine, 48(8), 309-314. ",
+                                    html.A("DOI:10.1016/j.ifacol.2015.08.199",
+                                          href="https://doi.org/10.1016/j.ifacol.2015.08.199",
+                                          target="_blank", style={'color': '#3498db'})
+                                ]),
+                            ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.6',
+                                     'fontSize': '13px', 'paddingLeft': '20px'})
+                        ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
+                                 'maxWidth': '600px', 'margin': '0 auto'})
+                    ], style={'textAlign': 'center', 'padding': '50px 20px'})
                 ], style={'display': 'block'}),
 
                 # Main process plots (5 rows x 2 cols = 10 subplots)
