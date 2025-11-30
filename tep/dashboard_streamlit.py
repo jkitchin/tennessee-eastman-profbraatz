@@ -338,11 +338,13 @@ def run_simulation_step():
 
     # Log simulator and process object IDs to detect if they're changing
     proc = simulator.process
-    # Store the _idv ID on first call to detect if the array object changes
+    # Store the _idv ID and yy ID on first call to detect if arrays change
     if not hasattr(simulator, '_debug_idv_id'):
         simulator._debug_idv_id = id(proc._idv)
+        simulator._debug_yy_id = id(proc.yy)
     idv_id_changed = id(proc._idv) != simulator._debug_idv_id
-    logger.info(f"SIM_ID={id(simulator)}, PROC_ID={id(proc)}, _idv_ID={id(proc._idv)}, idv_changed={idv_id_changed}")
+    yy_id_changed = id(proc.yy) != simulator._debug_yy_id
+    logger.info(f"SIM_ID={id(simulator)}, yy_ID={id(proc.yy)}, yy_changed={yy_id_changed}")
 
     # Get parameters from session state
     # Note: Widget values are stored with their key names in session_state
@@ -419,10 +421,11 @@ def run_simulation_step():
             logger.warning(f"  Active IDVs: {simulator.get_active_disturbances()}")
             return
 
-        # Log every 100 steps if IDV(7) active to track pressure
+        # Log every 100 steps if IDV(7) active to track pressure AND yy_sum
         if 7 in disturbances and i > 0 and i % 100 == 0:
             meas_mid = simulator.get_measurements()
-            logger.info(f"    step {simulator.step_count}: P={meas_mid[6]:.1f}kPa")
+            yy_sum_mid = np.sum(simulator.process.yy[:10])
+            logger.info(f"    step {simulator.step_count}: P={meas_mid[6]:.1f}kPa, yy_sum={yy_sum_mid:.2f}")
 
     if 7 in disturbances:
         meas_end = simulator.get_measurements()
