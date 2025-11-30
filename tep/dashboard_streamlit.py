@@ -347,10 +347,17 @@ def run_simulation_step():
 
     # Track actual yy values between fragment runs
     yy_sum_now = np.sum(proc.yy[:10])
+    yy_first5 = proc.yy[:5].copy()  # Save first 5 elements for detailed comparison
     prev_yy_sum = getattr(simulator, '_debug_prev_yy_sum', None)
+    prev_yy_first5 = getattr(simulator, '_debug_prev_yy_first5', None)
     if prev_yy_sum is not None:
         yy_diff = yy_sum_now - prev_yy_sum
         logger.info(f"FRAGMENT_START: yy_sum={yy_sum_now:.4f}, prev_end={prev_yy_sum:.4f}, diff={yy_diff:.4f}")
+        # Log detailed element changes if significant
+        if prev_yy_first5 is not None and abs(yy_diff) > 0.1:
+            for i in range(5):
+                delta = yy_first5[i] - prev_yy_first5[i]
+                logger.info(f"  yy[{i}]: now={yy_first5[i]:.4f}, was={prev_yy_first5[i]:.4f}, delta={delta:.4f}")
     else:
         logger.info(f"FRAGMENT_START: yy_sum={yy_sum_now:.4f} (first call)")
     logger.info(f"SIM_ID={id(simulator)}, yy_ID={id(proc.yy)}, yy_changed={yy_id_changed}")
@@ -441,8 +448,9 @@ def run_simulation_step():
         yy_sum_end = np.sum(simulator.process.yy[:10])
         logger.info(f"  Batch end: step={simulator.step_count}, P={meas_end[6]:.1f}kPa, yy_sum={yy_sum_end:.2f}")
 
-    # Save yy_sum at end of this fragment for comparison at next fragment start
+    # Save yy state at end of this fragment for comparison at next fragment start
     simulator._debug_prev_yy_sum = np.sum(simulator.process.yy[:10])
+    simulator._debug_prev_yy_first5 = simulator.process.yy[:5].copy()
 
     # Record data at specified interval
     current_time_sec = simulator.time * 3600
