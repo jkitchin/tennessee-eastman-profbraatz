@@ -100,26 +100,66 @@ IDV_INFO = [
     ("IDV(20)", "Unknown disturbance"),
 ]
 
-# Plot configurations: (title, [(label, measurement_index), ...])
-# XMEAS(1-41) measurements - index = XMEAS number - 1
-#  XMEAS(1): A Feed             XMEAS(10): Purge Rate
-#  XMEAS(2): D Feed             XMEAS(11): Product Sep Temp
-#  XMEAS(3): E Feed             XMEAS(12): Product Sep Level
-#  XMEAS(4): A+C Feed           XMEAS(13): Prod Sep Pressure
-#  XMEAS(5): Recycle Flow       XMEAS(14): Prod Sep Underflow
-#  XMEAS(6): Reactor Feed       XMEAS(15): Stripper Level
-#  XMEAS(7): Reactor Pressure   XMEAS(16): Stripper Pressure
-#  XMEAS(8): Reactor Level      XMEAS(17): Stripper Underflow (Product)
-#  XMEAS(9): Reactor Temp       XMEAS(18): Stripper Temp
-# XMEAS(23-28): Reactor Feed Comp  XMEAS(29-36): Purge Gas Comp
-# XMEAS(37-41): Product Comp
+# Plot configurations: (title, [(label, measurement_index, secondary_y), ...], use_dual_y)
+# Organized by unit operation to show all relevant process measurements
+# XMEAS indices are 0-based (XMEAS(n) -> index n-1)
+# secondary_y=True means use right y-axis (for different magnitude signals)
 PLOT_CONFIGS = [
-    ("Reactor", [("XMEAS(9) Temp", 8), ("XMEAS(8) Level", 7)]),
-    ("Reactor Pressure", [("XMEAS(7) Pressure", 6)]),
-    ("Separator", [("XMEAS(11) Temp", 10), ("XMEAS(12) Level", 11)]),
-    ("A Feed & Purge", [("XMEAS(1) A Feed", 0), ("XMEAS(10) Purge", 9)]),
-    ("Product", [("XMEAS(17) Flow", 16), ("XMEAS(18) Temp", 17)]),
-    ("Reactor Feed Comp", [("XMEAS(23) A%", 22), ("XMEAS(25) C%", 24), ("XMEAS(26) D%", 25)]),
+    # Row 1: Feeds - D,E (kg/hr ~3600-4500) vs A,A+C (kscmh ~0.25-9.35)
+    ("Feed Flows", [
+        ("XMEAS(1) A Feed", 0, False),      # kscmh ~0.25
+        ("XMEAS(4) A+C Feed", 3, False),    # kscmh ~9.35
+        ("XMEAS(2) D Feed", 1, True),       # kg/hr ~3600
+        ("XMEAS(3) E Feed", 2, True),       # kg/hr ~4500
+    ], True),
+    ("Feed & Recycle", [
+        ("XMEAS(5) Recycle", 4, False),     # kscmh
+        ("XMEAS(6) React Feed", 5, False),  # kscmh
+    ], False),
+    # Row 2: Reactor - Pressure (kPa ~2705) vs Level/Temp (~65%/~122°C)
+    ("Reactor", [
+        ("XMEAS(8) Level", 7, False),       # % ~65
+        ("XMEAS(9) Temp", 8, False),        # °C ~122
+        ("XMEAS(7) Pressure", 6, True),     # kPa ~2705
+    ], True),
+    ("Reactor CW & Work", [
+        ("XMEAS(21) CW Out", 20, False),    # °C ~92
+        ("XMEAS(20) Comp Work", 19, True),  # kW ~341
+    ], True),
+    # Row 3: Separator - Pressure (kPa ~2633) vs Temp/Level (~80°C/~50%)
+    ("Separator", [
+        ("XMEAS(11) Temp", 10, False),      # °C ~80
+        ("XMEAS(12) Level", 11, False),     # % ~50
+        ("XMEAS(13) Pressure", 12, True),   # kPa ~2633
+    ], True),
+    ("Separator Flows", [
+        ("XMEAS(10) Purge", 9, False),      # kscmh
+        ("XMEAS(14) Underflow", 13, False), # m3/hr
+        ("XMEAS(22) CW Out", 21, True),     # °C (different scale)
+    ], True),
+    # Row 4: Stripper - Pressure (kPa ~3102) vs Level/Temp (~50%/~65°C)
+    ("Stripper", [
+        ("XMEAS(15) Level", 14, False),     # % ~50
+        ("XMEAS(18) Temp", 17, False),      # °C ~65
+        ("XMEAS(16) Pressure", 15, True),   # kPa ~3102
+    ], True),
+    ("Stripper Flows", [
+        ("XMEAS(17) Product", 16, False),   # m3/hr ~22
+        ("XMEAS(19) Steam", 18, True),      # kg/hr ~230
+    ], True),
+    # Row 5: Compositions - all in mol%, similar scales
+    ("Reactor Feed Comp", [
+        ("XMEAS(23) A%", 22, False),
+        ("XMEAS(24) B%", 23, False),
+        ("XMEAS(25) C%", 24, False),
+        ("XMEAS(26) D%", 25, False),
+    ], False),
+    ("Product Comp", [
+        ("XMEAS(37) D%", 36, False),
+        ("XMEAS(38) E%", 37, False),
+        ("XMEAS(39) F%", 38, False),
+        ("XMEAS(40) G%", 39, False),
+    ], False),
 ]
 
 
@@ -385,28 +425,15 @@ def create_layout():
                                 html.Li("Set data output interval (how often points are recorded)"),
                                 html.Li("Enable disturbances on the right panel to test fault scenarios"),
                                 html.Li("Switch to Manual mode to control valves directly"),
-                                html.Li("Scroll down to see all 41 measurements and 12 MVs"),
+                                html.Li("View measurements by unit: Feeds, Reactor, Separator, Stripper, Compositions"),
                             ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8'})
                         ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
                                  'maxWidth': '500px', 'margin': '0 auto'})
                     ], style={'textAlign': 'center', 'padding': '100px 20px'})
                 ], style={'display': 'block'}),
 
-                # Main process plots
-                dcc.Graph(id='main-plots', style={'height': '850px', 'display': 'none'}),
-
-                # All Variables section (shown below main plots)
-                html.Div(id='all-variables-section', children=[
-                    # Measurements plots
-                    html.H4("All Process Measurements (XMEAS 1-41)",
-                           style={'marginTop': '20px', 'marginBottom': '10px', 'color': '#2c3e50'}),
-                    dcc.Graph(id='measurements-grid', style={'height': '900px'}),
-
-                    # MVs plots
-                    html.H4("All Manipulated Variables (XMV 1-12)",
-                           style={'marginTop': '20px', 'marginBottom': '10px', 'color': '#2c3e50'}),
-                    dcc.Graph(id='mvs-grid', style={'height': '400px'}),
-                ], style={'display': 'none'})
+                # Main process plots (5 rows x 2 cols = 10 subplots)
+                dcc.Graph(id='main-plots', style={'height': '1100px', 'display': 'none'})
             ], style={'flexGrow': '1', 'backgroundColor': '#fff', 'borderRadius': '5px',
                      'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'padding': '10px',
                      'overflowY': 'auto', 'maxHeight': 'calc(100vh - 150px)'}),
@@ -497,43 +524,83 @@ def decimate_data(data, max_points):
 
 
 def create_empty_figure():
-    """Create an empty figure with subplots."""
+    """Create an empty figure with subplots (with secondary y-axes where needed)."""
+    n_rows = 5
+    n_cols = 2
+
+    # Build specs for secondary_y based on PLOT_CONFIGS
+    specs = []
+    for row_idx in range(n_rows):
+        row_specs = []
+        for col_idx in range(n_cols):
+            cfg_idx = row_idx * n_cols + col_idx
+            if cfg_idx < len(PLOT_CONFIGS):
+                use_dual_y = PLOT_CONFIGS[cfg_idx][2]
+                row_specs.append({"secondary_y": use_dual_y})
+            else:
+                row_specs.append({})
+        specs.append(row_specs)
+
     fig = make_subplots(
-        rows=3, cols=2,
+        rows=n_rows, cols=n_cols,
         subplot_titles=[cfg[0] for cfg in PLOT_CONFIGS],
-        vertical_spacing=0.08,
-        horizontal_spacing=0.08
+        vertical_spacing=0.06,
+        horizontal_spacing=0.10,
+        specs=specs
     )
 
     # Use distinct colors and line styles for better differentiation
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2']
     dashes = ['solid', 'dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
 
-    # Global trace counter for unique colors/dashes across all subplots
-    trace_idx = 0
+    # Subplot positions for legends (x, y in paper coordinates) - 5 rows x 2 cols
+    legend_positions = [
+        (0.02, 0.99), (0.52, 0.99),  # row 1
+        (0.02, 0.79), (0.52, 0.79),  # row 2
+        (0.02, 0.59), (0.52, 0.59),  # row 3
+        (0.02, 0.39), (0.52, 0.39),  # row 4
+        (0.02, 0.19), (0.52, 0.19),  # row 5
+    ]
 
-    for idx, (title, signals) in enumerate(PLOT_CONFIGS):
-        row = idx // 2 + 1
-        col = idx % 2 + 1
+    for idx, (title, signals, use_dual_y) in enumerate(PLOT_CONFIGS):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
+        legend_name = f'legend{idx + 1}' if idx > 0 else 'legend'
 
-        for label, _ in signals:
+        for sig_idx, (label, _, secondary_y) in enumerate(signals):
             fig.add_trace(
                 go.Scatter(x=[], y=[], name=label, mode='lines',
-                          line=dict(color=colors[trace_idx % len(colors)],
+                          line=dict(color=colors[sig_idx % len(colors)],
                                    width=2,
-                                   dash=dashes[trace_idx % len(dashes)]),
-                          showlegend=True, legendgroup=f'group{idx}'),
-                row=row, col=col
+                                   dash=dashes[sig_idx % len(dashes)]),
+                          showlegend=True, legend=legend_name),
+                row=row, col=col,
+                secondary_y=secondary_y if use_dual_y else False
             )
-            trace_idx += 1
 
         fig.update_xaxes(title_text="Time (min)", row=row, col=col)
 
+    # Create separate legends for each subplot
+    legend_configs = {}
+    for idx in range(len(PLOT_CONFIGS)):
+        legend_name = f'legend{idx + 1}' if idx > 0 else 'legend'
+        x_pos, y_pos = legend_positions[idx]
+        legend_configs[legend_name] = dict(
+            x=x_pos,
+            y=y_pos,
+            xanchor='left',
+            yanchor='top',
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='rgba(0,0,0,0.1)',
+            borderwidth=1,
+            font=dict(size=8)
+        )
+
     fig.update_layout(
-        height=800,
-        margin=dict(l=60, r=30, t=40, b=40),
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        template='plotly_white'
+        height=1100,
+        margin=dict(l=60, r=60, t=40, b=30),
+        template='plotly_white',
+        **legend_configs
     )
 
     return fig
@@ -599,7 +666,6 @@ def control_simulation(start_clicks, stop_clicks, reset_clicks, backend, state, 
 @app.callback(
     Output('main-plots', 'style'),
     Output('welcome-message', 'style'),
-    Output('all-variables-section', 'style'),
     Input('start-btn', 'n_clicks'),
     Input('reset-btn', 'n_clicks'),
     prevent_initial_call=True
@@ -608,22 +674,20 @@ def toggle_welcome_message(start_clicks, reset_clicks):
     """Show/hide welcome message and plots based on simulation state."""
     triggered = ctx.triggered_id
 
-    graph_visible = {'height': '850px', 'display': 'block'}
-    graph_hidden = {'height': '850px', 'display': 'none'}
+    graph_visible = {'height': '1100px', 'display': 'block'}
+    graph_hidden = {'height': '1100px', 'display': 'none'}
     welcome_visible = {'display': 'block'}
     welcome_hidden = {'display': 'none'}
-    all_vars_visible = {'display': 'block'}
-    all_vars_hidden = {'display': 'none'}
 
     if triggered == 'start-btn':
         # Hide welcome, show graphs
-        return graph_visible, welcome_hidden, all_vars_visible
+        return graph_visible, welcome_hidden
     elif triggered == 'reset-btn':
-        # Show welcome, hide graphs
-        return graph_hidden, welcome_visible, all_vars_hidden
+        # Show welcome, hide graphs (data is cleared in init_simulator)
+        return graph_hidden, welcome_visible
 
     # Default: show welcome
-    return graph_hidden, welcome_visible, all_vars_hidden
+    return graph_hidden, welcome_visible
 
 
 @app.callback(
@@ -803,12 +867,29 @@ def update_simulation(n_intervals, state, control_mode, *mv_values):
 
 
 def create_figure_with_data():
-    """Create figure with current simulation data."""
+    """Create figure with current simulation data (with secondary y-axes where needed)."""
+    n_rows = 5
+    n_cols = 2
+
+    # Build specs for secondary_y based on PLOT_CONFIGS
+    specs = []
+    for row_idx in range(n_rows):
+        row_specs = []
+        for col_idx in range(n_cols):
+            cfg_idx = row_idx * n_cols + col_idx
+            if cfg_idx < len(PLOT_CONFIGS):
+                use_dual_y = PLOT_CONFIGS[cfg_idx][2]
+                row_specs.append({"secondary_y": use_dual_y})
+            else:
+                row_specs.append({})
+        specs.append(row_specs)
+
     fig = make_subplots(
-        rows=3, cols=2,
+        rows=n_rows, cols=n_cols,
         subplot_titles=[cfg[0] for cfg in PLOT_CONFIGS],
-        vertical_spacing=0.12,
-        horizontal_spacing=0.1
+        vertical_spacing=0.06,
+        horizontal_spacing=0.10,
+        specs=specs
     )
 
     # Use distinct colors and line styles for better differentiation
@@ -822,24 +903,42 @@ def create_figure_with_data():
     time_data_full = sim_data['time']
     time_data = decimate_data(time_data_full, max_points)
 
+    # Subplot positions for legends (x, y in paper coordinates) - 5 rows x 2 cols
+    legend_positions = [
+        (0.02, 0.99), (0.52, 0.99),  # row 1
+        (0.02, 0.79), (0.52, 0.79),  # row 2
+        (0.02, 0.59), (0.52, 0.59),  # row 3
+        (0.02, 0.39), (0.52, 0.39),  # row 4
+        (0.02, 0.19), (0.52, 0.19),  # row 5
+    ]
+
     # Global trace counter for unique colors/dashes across all subplots
     trace_idx = 0
 
-    for idx, (title, signals) in enumerate(PLOT_CONFIGS):
-        row = idx // 2 + 1
-        col = idx % 2 + 1
+    for idx, (title, signals, use_dual_y) in enumerate(PLOT_CONFIGS):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
 
-        # Track min/max efficiently without copying all data
-        y_min_all = float('inf')
-        y_max_all = float('-inf')
+        # Track min/max for primary and secondary y-axes separately
+        y_min_primary = float('inf')
+        y_max_primary = float('-inf')
+        y_min_secondary = float('inf')
+        y_max_secondary = float('-inf')
 
-        for label, meas_idx in signals:
+        # Determine legend name for this subplot
+        legend_name = f'legend{idx + 1}' if idx > 0 else 'legend'
+
+        for sig_idx, (label, meas_idx, secondary_y) in enumerate(signals):
             y_data_full = sim_data['measurements'].get(meas_idx, [])
 
-            # Compute min/max directly without creating intermediate list
+            # Compute min/max for appropriate axis
             if y_data_full:
-                y_min_all = min(y_min_all, min(y_data_full))
-                y_max_all = max(y_max_all, max(y_data_full))
+                if secondary_y and use_dual_y:
+                    y_min_secondary = min(y_min_secondary, min(y_data_full))
+                    y_max_secondary = max(y_max_secondary, max(y_data_full))
+                else:
+                    y_min_primary = min(y_min_primary, min(y_data_full))
+                    y_max_primary = max(y_max_primary, max(y_data_full))
 
             # Decimate for display
             y_data = decimate_data(y_data_full, max_points)
@@ -850,38 +949,53 @@ def create_figure_with_data():
                     y=y_data,
                     name=label,
                     mode='lines',
-                    line=dict(color=colors[trace_idx % len(colors)],
+                    line=dict(color=colors[sig_idx % len(colors)],
                              width=2,
-                             dash=dashes[trace_idx % len(dashes)]),
-                    legendgroup=f'group{idx}',
+                             dash=dashes[sig_idx % len(dashes)]),
+                    legend=legend_name,
                     showlegend=True,
                 ),
-                row=row, col=col
+                row=row, col=col,
+                secondary_y=secondary_y if use_dual_y else False
             )
             trace_idx += 1
 
-        # Set y-axis range with margin for autoscaling
-        if y_min_all != float('inf'):
-            y_min = y_min_all
-            y_max = y_max_all
-            y_range = y_max - y_min
-
-            # Ensure minimum range to avoid flat lines at edges
+        # Set y-axis range for primary axis
+        if y_min_primary != float('inf'):
+            y_range = y_max_primary - y_min_primary
             if y_range < 1e-6:
-                # If data is essentially constant, add symmetric padding
-                padding = max(abs(y_min) * 0.1, 1.0)
-                y_min_plot = y_min - padding
-                y_max_plot = y_max + padding
+                padding = max(abs(y_min_primary) * 0.1, 1.0)
+                y_min_plot = y_min_primary - padding
+                y_max_plot = y_max_primary + padding
             else:
-                # Add 15% margin on each side so data doesn't hit edges
                 margin = y_range * 0.15
-                y_min_plot = y_min - margin
-                y_max_plot = y_max + margin
+                y_min_plot = y_min_primary - margin
+                y_max_plot = y_max_primary + margin
 
             fig.update_yaxes(
                 range=[y_min_plot, y_max_plot],
                 autorange=False,
-                row=row, col=col
+                row=row, col=col,
+                secondary_y=False
+            )
+
+        # Set y-axis range for secondary axis (if used)
+        if use_dual_y and y_min_secondary != float('inf'):
+            y_range = y_max_secondary - y_min_secondary
+            if y_range < 1e-6:
+                padding = max(abs(y_min_secondary) * 0.1, 1.0)
+                y_min_plot = y_min_secondary - padding
+                y_max_plot = y_max_secondary + padding
+            else:
+                margin = y_range * 0.15
+                y_min_plot = y_min_secondary - margin
+                y_max_plot = y_max_secondary + margin
+
+            fig.update_yaxes(
+                range=[y_min_plot, y_max_plot],
+                autorange=False,
+                row=row, col=col,
+                secondary_y=True
             )
 
         # Set x-axis to start from 0 and extend to current time (no auto-rescaling)
@@ -892,127 +1006,30 @@ def create_figure_with_data():
         else:
             fig.update_xaxes(title_text="Time (min)", range=[0, 1], row=row, col=col)
 
-    fig.update_layout(
-        height=850,
-        margin=dict(l=60, r=30, t=50, b=80),
-        template='plotly_white',
-        showlegend=True,
-        legend=dict(
-            orientation='h',
+    # Create separate legends for each subplot, positioned in upper left corner
+    legend_configs = {}
+    for idx in range(len(PLOT_CONFIGS)):
+        legend_name = f'legend{idx + 1}' if idx > 0 else 'legend'
+        x_pos, y_pos = legend_positions[idx]
+        legend_configs[legend_name] = dict(
+            x=x_pos,
+            y=y_pos,
+            xanchor='left',
             yanchor='top',
-            y=-0.08,
-            xanchor='center',
-            x=0.5,
-            font=dict(size=10)
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='rgba(0,0,0,0.1)',
+            borderwidth=1,
+            font=dict(size=9)
         )
+
+    fig.update_layout(
+        height=1100,
+        margin=dict(l=60, r=60, t=40, b=30),
+        template='plotly_white',
+        **legend_configs
     )
 
     return fig
-
-
-@app.callback(
-    Output('measurements-grid', 'figure'),
-    Output('mvs-grid', 'figure'),
-    Input('interval-component', 'n_intervals'),
-    prevent_initial_call=True
-)
-def update_variables_grid(n_intervals):
-    """Update the All Variables grid with time series plots."""
-    global simulator, sim_data
-    from dash import no_update
-
-    # Skip if no data yet
-    if not sim_data['time']:
-        return no_update, no_update
-
-    # Only update every 5th interval to reduce browser load (53 subplots is expensive)
-    if n_intervals % 5 != 0:
-        return no_update, no_update
-
-    max_points = sim_data.get('max_display_points', 2000)
-    time_data_full = sim_data['time']
-    time_data = decimate_data(time_data_full, max_points)
-
-    # Create measurements figure (7 cols x 6 rows = 42 subplots, using 41)
-    n_meas_rows = 6
-    n_meas_cols = 7
-    meas_titles = [f"XMEAS({i+1})" for i in range(NUM_MEASUREMENTS)]
-
-    meas_fig = make_subplots(
-        rows=n_meas_rows, cols=n_meas_cols,
-        subplot_titles=meas_titles,
-        vertical_spacing=0.06,
-        horizontal_spacing=0.03
-    )
-
-    for i in range(NUM_MEASUREMENTS):
-        row = i // n_meas_cols + 1
-        col = i % n_meas_cols + 1
-
-        y_data_full = sim_data['measurements'].get(i, [])
-        y_data = decimate_data(y_data_full, max_points)
-
-        meas_fig.add_trace(
-            go.Scatter(
-                x=time_data,
-                y=y_data,
-                mode='lines',
-                line=dict(color='#3498db', width=1),
-                showlegend=False,
-            ),
-            row=row, col=col
-        )
-
-    meas_fig.update_layout(
-        height=900,
-        margin=dict(l=40, r=20, t=40, b=40),
-        template='plotly_white',
-        showlegend=False,
-    )
-    # Update all axes to be minimal
-    meas_fig.update_xaxes(showticklabels=False, showgrid=True, gridcolor='#f0f0f0')
-    meas_fig.update_yaxes(showticklabels=True, tickfont=dict(size=8), showgrid=True, gridcolor='#f0f0f0')
-
-    # Create MVs figure (4 cols x 3 rows = 12 subplots)
-    n_mv_rows = 3
-    n_mv_cols = 4
-    mv_titles = [f"XMV({i+1})" for i in range(NUM_MANIPULATED_VARS)]
-
-    mvs_fig = make_subplots(
-        rows=n_mv_rows, cols=n_mv_cols,
-        subplot_titles=mv_titles,
-        vertical_spacing=0.12,
-        horizontal_spacing=0.05
-    )
-
-    for i in range(NUM_MANIPULATED_VARS):
-        row = i // n_mv_cols + 1
-        col = i % n_mv_cols + 1
-
-        y_data_full = sim_data['mvs'].get(i, [])
-        y_data = decimate_data(y_data_full, max_points)
-
-        mvs_fig.add_trace(
-            go.Scatter(
-                x=time_data,
-                y=y_data,
-                mode='lines',
-                line=dict(color='#27ae60', width=1),
-                showlegend=False,
-            ),
-            row=row, col=col
-        )
-
-    mvs_fig.update_layout(
-        height=400,
-        margin=dict(l=40, r=20, t=40, b=40),
-        template='plotly_white',
-        showlegend=False,
-    )
-    mvs_fig.update_xaxes(showticklabels=False, showgrid=True, gridcolor='#f0f0f0')
-    mvs_fig.update_yaxes(showticklabels=True, tickfont=dict(size=8), showgrid=True, gridcolor='#f0f0f0')
-
-    return meas_fig, mvs_fig
 
 
 @app.callback(
