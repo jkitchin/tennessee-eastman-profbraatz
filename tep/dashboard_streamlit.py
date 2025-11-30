@@ -372,10 +372,9 @@ def run_simulation_step():
     for idv in disturbances:
         simulator.set_disturbance(idv, 1)
 
-    # Log active disturbances periodically (every ~100 steps for more visibility)
-    if simulator.step_count % 100 == 0:
-        active = simulator.get_active_disturbances()
-        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, active IDVs: {active}, checkboxes: {disturbances}")
+    # Log active disturbances on EVERY fragment run (not just every 100 steps)
+    active = simulator.get_active_disturbances()
+    logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, active IDVs: {active}, checkboxes: {disturbances}, sim_id={id(simulator)}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
