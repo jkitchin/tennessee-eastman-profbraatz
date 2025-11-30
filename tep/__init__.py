@@ -74,7 +74,7 @@ from .constants import (
 from . import controller_plugins
 from . import detector_plugins
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 __author__ = "Fortran wrapper of Downs & Vogel (1993)"
 
 
