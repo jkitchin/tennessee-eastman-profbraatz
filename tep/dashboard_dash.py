@@ -23,10 +23,20 @@ import numpy as np
 import webbrowser
 import threading
 import logging
+import sys
+
+# Configure logging for TEP dashboard
+logging.basicConfig(
+    level=logging.INFO,
+    format='[TEP] %(asctime)s %(levelname)s: %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger('tep.dashboard')
+logger.setLevel(logging.INFO)
 
 # Suppress Flask/Werkzeug logging early (before app is created)
-logging.getLogger('werkzeug').setLevel(logging.CRITICAL)
-logging.getLogger('flask.app').setLevel(logging.CRITICAL)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+logging.getLogger('flask.app').setLevel(logging.WARNING)
 
 from dash import Dash, html, dcc, Output, Input, State, ctx, dash_table
 import plotly.graph_objects as go
@@ -37,7 +47,13 @@ from .constants import (
     NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES, INITIAL_STATES,
     SAFETY_LIMITS, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES
 )
-from . import get_available_backends, get_default_backend, __version__
+from . import get_available_backends, get_default_backend, __version__, is_fortran_available
+
+# Log startup info
+logger.info(f"TEP Dashboard v{__version__} starting...")
+logger.info(f"Available backends: {get_available_backends()}")
+logger.info(f"Fortran available: {is_fortran_available()}")
+logger.info(f"Default backend: {get_default_backend()}")
 
 
 # Global simulator instance and data storage
@@ -112,8 +128,21 @@ def init_simulator(backend=None):
     global simulator, sim_data
     if backend is None:
         backend = get_default_backend()
-    simulator = TEPSimulator(control_mode=ControlMode.CLOSED_LOOP, backend=backend)
-    simulator.initialize()
+    logger.info(f"Initializing simulator with backend: {backend}")
+    try:
+        simulator = TEPSimulator(control_mode=ControlMode.CLOSED_LOOP, backend=backend)
+        simulator.initialize()
+        logger.info(f"Simulator initialized successfully, actual backend: {simulator.backend}")
+    except Exception as e:
+        logger.error(f"Failed to initialize simulator with {backend}: {e}")
+        # Fall back to Python if Fortran fails
+        if backend == 'fortran':
+            logger.info("Falling back to Python backend")
+            backend = 'python'
+            simulator = TEPSimulator(control_mode=ControlMode.CLOSED_LOOP, backend=backend)
+            simulator.initialize()
+        else:
+            raise
     sim_data['time'] = []
     sim_data['measurements'] = {i: [] for i in range(NUM_MEASUREMENTS)}
     sim_data['mvs'] = {i: [] for i in range(NUM_MANIPULATED_VARS)}
@@ -720,7 +749,10 @@ def update_simulation(n_intervals, state, control_mode, *mv_values):
             sim_data['running'] = False
             # Get measurements to determine shutdown reason
             meas = simulator.get_measurements()
-            sim_data['shutdown_reason'] = get_shutdown_reason(meas)
+            reason = get_shutdown_reason(meas)
+            sim_data['shutdown_reason'] = reason
+            logger.warning(f"Process shutdown at t={simulator.time:.4f}h: {reason}")
+            logger.info(f"Measurements at shutdown: pressure={meas[6]:.1f}, temp={meas[8]:.1f}, reactor_level={meas[7]:.1f}")
             shutdown_occurred = True
             break
 
