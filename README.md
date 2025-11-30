@@ -119,6 +119,10 @@ The web dashboard provides:
 - Manual valve manipulation
 - Data export to CSV
 
+**Live Demo:** [https://huggingface.co/spaces/jkitchin/tennessee-eastman-process](https://huggingface.co/spaces/jkitchin/tennessee-eastman-process)
+
+*Note: The HuggingFace demo may occasionally show 429 rate limit errors during high traffic. These typically resolve within 5-10 minutes.*
+
 ### Fault Detection Framework
 
 The simulator includes a comprehensive fault detection framework with:
