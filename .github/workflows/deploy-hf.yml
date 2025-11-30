@@ -3,6 +3,13 @@ name: Deploy to Hugging Face Spaces
 on:
   push:
     branches: [ master, main ]
+    paths:
+      - 'tep/**'
+      - 'Dockerfile'
+      - 'app.py'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'meson.build'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
