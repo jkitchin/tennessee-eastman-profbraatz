@@ -61,7 +61,8 @@ except ImportError:
 try:
     from .jax_backend import JaxTEProcess, JaxTEProcessWrapper, is_jax_available
     _JAX_AVAILABLE = is_jax_available()
-except ImportError:
+except Exception:
+    # JAX may fail with various errors (ImportError, RuntimeError, etc.)
     _JAX_AVAILABLE = False
     JaxTEProcess = None
     JaxTEProcessWrapper = None
@@ -87,7 +88,7 @@ from .constants import (
 from . import controller_plugins
 from . import detector_plugins
 
-__version__ = "2.4.0"
+__version__ = "3.0.0"
 __author__ = "Fortran wrapper of Downs & Vogel (1993)"
 
 

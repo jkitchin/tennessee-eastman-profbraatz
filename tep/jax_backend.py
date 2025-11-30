@@ -27,10 +27,18 @@ Example:
 
 from __future__ import annotations
 
+import os
+
+# Force JAX to use CPU backend - Apple Metal GPU support is experimental and incomplete
+# Users can override with JAX_PLATFORMS environment variable if needed
+if 'JAX_PLATFORMS' not in os.environ:
+    os.environ['JAX_PLATFORMS'] = 'cpu'
+
 import jax
 
-# Enable 64-bit floats in JAX (must be set before any JAX operations)
-jax.config.update("jax_enable_x64", True)
+# Note: 64-bit floats are not supported on all platforms (e.g., Apple Metal GPU)
+# Using 32-bit floats for broader compatibility. Set JAX_ENABLE_X64=true for 64-bit on CPU.
+# jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 from jax import lax
@@ -433,8 +441,8 @@ def create_initial_measurement_state() -> MeasurementState:
     )
 
 
-# Initial state vector (from Python backend)
-INITIAL_YY = jnp.array([
+# Initial state vector (from Python backend) - stored as Python list, converted lazily
+_INITIAL_YY_LIST = [
     10.40491389,    # YY(1)
     4.363996017,    # YY(2)
     7.570059737,    # YY(3)
@@ -485,7 +493,14 @@ INITIAL_YY = jnp.array([
     41.10581288,    # YY(48) - XMV(10)
     18.11349055,    # YY(49) - XMV(11)
     50.00000000,    # YY(50) - XMV(12)
-], dtype=jnp.float64)
+]
+
+def _get_initial_yy():
+    """Get initial state as JAX array (created on each call for device compatibility)."""
+    return jnp.array(_INITIAL_YY_LIST)
+
+# For backwards compatibility
+INITIAL_YY = None  # Will be set lazily or by _get_initial_yy()
 
 
 # =============================================================================
@@ -570,15 +585,18 @@ class JaxTEProcess:
         walks = create_initial_walk_state()
         measurements = create_initial_measurement_state()
 
+        # Get initial state vector (lazily initialized)
+        initial_yy = _get_initial_yy()
+
         # Initial manipulated variables from state vector
-        xmv = INITIAL_YY[38:50]
+        xmv = initial_yy[38:50]
 
         # Update valve command values to match initial MVs
         valves = valves._replace(vcv=xmv)
 
         # Create initial state
         state = TEPState(
-            yy=INITIAL_YY,
+            yy=initial_yy,
             yp=jnp.zeros(self._nn),
             time=0.0,
             reactor=reactor,
@@ -748,7 +766,7 @@ class JaxTEProcess:
             # Case 2: swlk <= 0.1
             adist_case2 = 0.0
             bdist_case2 = 0.0
-            cdist_case2 = walks.idvwlk[i].astype(jnp.float64) / (hwlk_new ** 2)
+            cdist_case2 = walks.idvwlk[i].astype(float) / (hwlk_new ** 2)
             ddist_case2 = 0.0
             tnext_case2 = new_tlast + hwlk_new
 
