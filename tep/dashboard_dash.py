@@ -504,6 +504,9 @@ def create_empty_figure():
 # Initialize the app
 app = Dash(__name__)
 app.title = "TEP Simulator Dashboard"
+
+# Expose the Flask server for production WSGI servers (gunicorn, etc.)
+server = app.server
 init_simulator()
 app.layout = create_layout()
 

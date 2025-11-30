@@ -1,0 +1,19 @@
+# Render Blueprint - Deploy TEP Dash Dashboard
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: tep-dashboard
+    runtime: docker
+    # Use Dockerfile for deployment
+    dockerfilePath: ./Dockerfile
+    # Free tier
+    plan: free
+    # Environment variables
+    envVars:
+      - key: TEP_BACKEND
+        value: python
+      - key: PORT
+        value: 7860
+    # Health check endpoint (Dash serves at /)
+    healthCheckPath: /
