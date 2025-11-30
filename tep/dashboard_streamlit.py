@@ -375,15 +375,13 @@ def run_simulation_step():
     meas = simulator.get_measurements()
     # Check internal process state - ftm[3] is affected by IDV(7)
     proc = simulator.process
-    if hasattr(proc, '_process'):
-        # PythonTEProcess has _process attribute for internal state
-        inner = proc._process
-        ftm3 = inner.ftm[3] if hasattr(inner, 'ftm') else 'N/A'
-        vrng3 = inner.vrng[3] if hasattr(inner, 'vrng') else 'N/A'
-        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, ftm3={ftm3:.4f}, vrng3={vrng3:.4f}")
+    if hasattr(proc, '_teproc'):
+        tp = proc._teproc
+        ftm3 = tp.ftm[3] if hasattr(tp, 'ftm') else 'N/A'
+        idv6 = proc.idv[6] if hasattr(proc, 'idv') else 'N/A'
+        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, idv[6]={idv6}, ftm3={ftm3:.2f}")
     else:
-        idv_state = list(proc.idv) if hasattr(proc, 'idv') else 'N/A'
-        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, idv_raw: {idv_state[:8]}")
+        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
