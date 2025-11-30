@@ -480,20 +480,16 @@ def run_simulation_step():
         sim_data['idv'] = sim_data['idv'][::step]
 
 
-@st.fragment(run_every=1.0)
 def simulation_fragment():
-    """Fragment that runs the simulation and updates plots.
+    """Run the simulation and update plots.
 
-    Using @st.fragment with run_every allows this to update independently
-    of the main app, reducing full-page reruns and blinking.
+    Simplified version without @st.fragment to debug state issues.
+    Uses st.empty() containers and manual rerun for updates.
     """
-    import threading
-    # Debug: log every fragment run with thread ID
-    thread_id = threading.get_ident()
     sim = st.session_state.get('simulator')
     running = st.session_state.get('running', False)
     if sim and running:
-        logger.info(f"FRAGMENT_ENTRY: thread={thread_id}, t={sim.time:.3f}hr, running={running}")
+        logger.info(f"SIMULATION_RUN: t={sim.time:.3f}hr, running={running}")
 
     # Run simulation step if running
     if st.session_state.running and not st.session_state.shutdown:
@@ -666,8 +662,14 @@ def main():
                     key=f"download_{len(st.session_state.sim_data['time'])}"
                 )
 
-    # Main content - use fragment for smooth updates
+    # Main content
     simulation_fragment()
+
+    # Auto-rerun when simulation is running
+    if st.session_state.running and not st.session_state.shutdown:
+        import time
+        time.sleep(0.5)  # Brief delay to prevent too-fast reruns
+        st.rerun()
 
 
 def run_dashboard(host='localhost', port=8501, open_browser=True):
