@@ -338,15 +338,11 @@ def run_simulation_step():
 
     # Log simulator and process object IDs to detect if they're changing
     proc = simulator.process
-    ctrl = simulator.controller
-    # Get controller integral errors if available
-    ctrl_errs = []
-    if hasattr(ctrl, '_controllers'):
-        for k, c in ctrl._controllers.items():
-            if hasattr(c, 'err_old'):
-                ctrl_errs.append(f"{k}:{c.err_old:.3f}")
-    ctrl_err_str = ",".join(ctrl_errs[:5]) if ctrl_errs else "N/A"  # First 5 controllers
-    logger.info(f"SIM_ID={id(simulator)}, PROC_ID={id(proc)}, ctrl_errs=[{ctrl_err_str}]")
+    # Store the _idv ID on first call to detect if the array object changes
+    if not hasattr(simulator, '_debug_idv_id'):
+        simulator._debug_idv_id = id(proc._idv)
+    idv_id_changed = id(proc._idv) != simulator._debug_idv_id
+    logger.info(f"SIM_ID={id(simulator)}, PROC_ID={id(proc)}, _idv_ID={id(proc._idv)}, idv_changed={idv_id_changed}")
 
     # Get parameters from session state
     # Note: Widget values are stored with their key names in session_state
