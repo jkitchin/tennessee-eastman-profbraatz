@@ -401,12 +401,12 @@ def create_layout():
                             # Measurements plots
                             html.H4("Process Measurements (XMEAS 1-41)",
                                    style={'marginTop': '10px', 'marginBottom': '10px', 'color': '#2c3e50'}),
-                            dcc.Graph(id='measurements-grid', style={'height': '600px'}),
+                            dcc.Graph(id='measurements-grid', style={'height': '600px'}, figure={}),
 
                             # MVs plots
                             html.H4("Manipulated Variables (XMV 1-12)",
                                    style={'marginTop': '10px', 'marginBottom': '10px', 'color': '#2c3e50'}),
-                            dcc.Graph(id='mvs-grid', style={'height': '350px'}),
+                            dcc.Graph(id='mvs-grid', style={'height': '350px'}, figure={}),
                         ], style={'padding': '10px', 'maxHeight': '1000px', 'overflowY': 'auto'})
                     ]),
                 ], style={'height': '100%'})
@@ -913,8 +913,8 @@ def create_figure_with_data():
     Output('measurements-grid', 'figure'),
     Output('mvs-grid', 'figure'),
     Input('interval-component', 'n_intervals'),
-    State('main-tabs', 'value'),
-    prevent_initial_call=True
+    Input('main-tabs', 'value'),
+    prevent_initial_call=False
 )
 def update_variables_grid(n_intervals, active_tab):
     """Update the All Variables grid with time series plots."""
@@ -924,6 +924,15 @@ def update_variables_grid(n_intervals, active_tab):
     # Only update if the Variables tab is active to reduce browser load
     if active_tab != 'variables-tab':
         return no_update, no_update
+
+    # Also skip if no data yet
+    if not sim_data['time']:
+        # Return empty figures with message
+        empty_fig = go.Figure()
+        empty_fig.update_layout(
+            annotations=[dict(text="Start simulation to see data", x=0.5, y=0.5, showarrow=False, font=dict(size=16))]
+        )
+        return empty_fig, empty_fig
 
     max_points = sim_data.get('max_display_points', 2000)
     time_data_full = sim_data['time']
