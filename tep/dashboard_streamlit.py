@@ -338,7 +338,15 @@ def run_simulation_step():
 
     # Log simulator and process object IDs to detect if they're changing
     proc = simulator.process
-    logger.info(f"SIM_ID={id(simulator)}, PROC_ID={id(proc)}, _idv_ID={id(proc._idv)}")
+    ctrl = simulator.controller
+    # Get controller integral errors if available
+    ctrl_errs = []
+    if hasattr(ctrl, '_controllers'):
+        for k, c in ctrl._controllers.items():
+            if hasattr(c, 'err_old'):
+                ctrl_errs.append(f"{k}:{c.err_old:.3f}")
+    ctrl_err_str = ",".join(ctrl_errs[:5]) if ctrl_errs else "N/A"  # First 5 controllers
+    logger.info(f"SIM_ID={id(simulator)}, PROC_ID={id(proc)}, ctrl_errs=[{ctrl_err_str}]")
 
     # Get parameters from session state
     # Note: Widget values are stored with their key names in session_state
@@ -384,9 +392,11 @@ def run_simulation_step():
         ftm3 = tp.ftm[3] if hasattr(tp, 'ftm') else 'N/A'
         # Log the ACTUAL internal _idv value (not the copy from .idv property)
         idv6_internal = proc._idv[6] if hasattr(proc, '_idv') else 'N/A'
-        # Also log yy[6] which is the reactor pressure state variable
-        yy6 = proc.yy[6] if hasattr(proc, 'yy') else 'N/A'
-        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, _idv[6]={idv6_internal}, ftm3={ftm3:.2f}, yy[6]={yy6:.2f}")
+        # Log a hash of the state vector to detect if it's being reset
+        yy_hash = hash(proc.yy.tobytes()) if hasattr(proc, 'yy') else 'N/A'
+        # Sum of first 10 state variables (to detect state changes)
+        yy_sum = np.sum(proc.yy[:10]) if hasattr(proc, 'yy') else 'N/A'
+        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, _idv[6]={idv6_internal}, ftm3={ftm3:.2f}, yy_sum={yy_sum:.2f}")
     else:
         logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}")
 
