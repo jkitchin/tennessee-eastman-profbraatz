@@ -27,7 +27,7 @@ from .constants import (
 )
 
 # Backend type alias
-BackendType = Literal["fortran", "python", "jax"]
+BackendType = Literal["fortran", "python"]
 
 
 def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
@@ -36,14 +36,14 @@ def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
     Parameters
     ----------
     backend : str
-        Backend type: 'fortran', 'python', or 'jax'
+        Backend type: 'fortran' or 'python'
     random_seed : int, optional
         Random seed for reproducibility
 
     Returns
     -------
     process
-        FortranTEProcess, PythonTEProcess, or JaxTEProcessWrapper instance
+        FortranTEProcess or PythonTEProcess instance
     """
     if backend == "fortran":
         try:
@@ -57,17 +57,8 @@ def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
     elif backend == "python":
         from .python_backend import PythonTEProcess
         return PythonTEProcess(random_seed)
-    elif backend == "jax":
-        try:
-            from .jax_backend import JaxTEProcessWrapper
-            return JaxTEProcessWrapper(random_seed)
-        except ImportError as e:
-            raise ImportError(
-                "JAX backend not available. Install with 'pip install jax jaxlib' "
-                "or use backend='python'. Error: " + str(e)
-            )
     else:
-        raise ValueError(f"Unknown backend: {backend}. Use 'fortran', 'python', or 'jax'.")
+        raise ValueError(f"Unknown backend: {backend}. Use 'fortran' or 'python'.")
 
 # Import detector types for type checking (avoid circular imports)
 if TYPE_CHECKING:
@@ -155,14 +146,13 @@ class TEPSimulator:
         Args:
             random_seed: Random seed for reproducibility
             control_mode: Control mode (open_loop, closed_loop, or manual)
-            backend: Simulation backend ('fortran', 'python', 'jax', or None for auto)
+            backend: Simulation backend ('fortran', 'python', or None for auto)
                 - None: Automatically selects best available (default)
                 - 'fortran': Uses original Fortran code via f2py (~5-10x faster)
                 - 'python': Pure Python implementation (no compilation needed)
-                - 'jax': JAX-based implementation (supports JIT, autodiff, GPU)
 
         Raises:
-            ImportError: If requested backend is not available
+            ImportError: If Fortran extension is not available and backend='fortran'
         """
         if random_seed is None:
             random_seed = DEFAULT_RANDOM_SEED
@@ -302,7 +292,7 @@ class TEPSimulator:
 
         Each step:
         1. Executes the controller (if not open loop)
-        2. Integrates the process equations (using process.step())
+        2. Integrates the process equations
         3. Processes all registered fault detectors
 
         Args:
@@ -325,17 +315,22 @@ class TEPSimulator:
                 for i in range(NUM_MANIPULATED_VARS):
                     self.process.set_xmv(i + 1, new_xmv[i])
 
-            # Use the process's step() method for integration
-            # This allows backends like JAX to use JIT-compiled stepping
-            self.process.step(self.dt)
-            self.time = self.process.time
-            self.step_count += 1
+            # Integrate one step
+            yp = self.process.evaluate(self.time, self.process.state.yy)
 
-            # Check for numerical instability periodically (every 100 steps)
-            # Frequent checks hurt JAX performance due to numpy conversion overhead
-            if self.step_count % 100 == 0:
-                if not np.all(np.isfinite(self.process.state.yy)):
-                    return False
+            # Check for numerical instability in derivatives
+            if not np.all(np.isfinite(yp)):
+                return False
+
+            self.time += self.dt
+            new_state = self.process.state.yy + yp * self.dt
+
+            # Check for numerical instability in new state
+            if not np.all(np.isfinite(new_state)):
+                return False
+
+            self.process.state.yy = new_state
+            self.step_count += 1
 
             # Process fault detectors
             if self._detectors:

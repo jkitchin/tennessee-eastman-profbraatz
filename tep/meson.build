@@ -11,7 +11,6 @@ py.install_sources(
     'detector_base.py',
     'detector_plugins.py',
     'fortran_backend.py',
-    'jax_backend.py',
     'python_backend.py',
     'simulator.py',
   ],

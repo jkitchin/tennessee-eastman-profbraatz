@@ -24,7 +24,7 @@ Python wrapper developed with Claude Code by John Kitchin.
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
-- **Three backends**: Pure Python (default), Fortran (~5-10x faster), JAX (experimental, JIT/autodiff/GPU)
+- **Two backends**: Pure Python (default, no compiler needed) or Fortran (~5-10x faster)
 - **20 process disturbances** (step changes, random variations, slow drift, valve sticking)
 - **Multiple control modes**: Open-loop, closed-loop (decentralized PI), and manual
 - **Real-time fault detection** with pluggable detector modules and performance metrics
@@ -56,9 +56,6 @@ pip install -e .
 
 # With Fortran acceleration (requires gfortran, ~5-10x faster)
 pip install -e . --config-settings=setup-args=-Dfortran=enabled
-
-# With JAX support (experimental - JIT compilation, autodiff, batch simulations)
-pip install -e ".[jax]"
 
 # With web dashboard support (Dash)
 pip install -e ".[web]"
@@ -125,44 +122,6 @@ The web dashboard provides:
 **Live Demo:** [https://huggingface.co/spaces/jkitchin/tennessee-eastman-process](https://huggingface.co/spaces/jkitchin/tennessee-eastman-process)
 
 *Note: The HuggingFace demo may occasionally show 429 rate limit errors during high traffic. These typically resolve within 5-10 minutes.*
-
-### JAX Backend (Experimental)
-
-The JAX backend provides advanced capabilities for machine learning and optimization research:
-
-- **JIT compilation** for faster repeated simulations
-- **Automatic differentiation** for gradient-based optimization and sensitivity analysis
-- **Vectorization (vmap)** for efficient batch simulations
-- **GPU/TPU acceleration** (when using CUDA/TPU JAX builds)
-
-```python
-from tep import TEPSimulator, is_jax_available
-
-# Check if JAX is available
-print(is_jax_available())  # True if JAX is installed
-
-# Use JAX backend
-sim = TEPSimulator(backend='jax')
-sim.initialize()
-result = sim.simulate(duration_hours=1.0)
-
-# For direct JAX operations (JIT, vmap, grad)
-from tep.jax_backend import JaxTEProcess
-import jax
-
-key = jax.random.PRNGKey(1234)
-process = JaxTEProcess()
-state, key = process.initialize(key)
-
-# Run simulation steps
-for _ in range(3600):
-    state, key = process.step(state, key)
-
-# Get measurements
-xmeas = process.get_xmeas(state)
-```
-
-**Note:** The JAX backend is experimental. It uses CPU by default for broad compatibility (Apple Metal GPU support is incomplete). To enable GPU on CUDA systems, set `JAX_PLATFORMS=cuda` before importing. The JAX backend uses 32-bit floats for compatibility; for 64-bit precision on CPU, set `JAX_ENABLE_X64=true`.
 
 ### Fault Detection Framework
 
@@ -377,7 +336,6 @@ tep/
 ├── simulator.py          # High-level TEPSimulator interface (backend-agnostic)
 ├── python_backend.py     # Pure Python implementation (default)
 ├── fortran_backend.py    # f2py wrapper for Fortran TEINIT/TEFUNC (optional)
-├── jax_backend.py        # JAX implementation (experimental, optional)
 ├── constants.py          # Physical constants, initial states, variable names
 ├── controllers.py        # PI controllers, decentralized control
 ├── controller_base.py    # Controller plugin system base classes
@@ -390,10 +348,7 @@ tep/
     └── teprob.cpython-*.so
 ```
 
-**Backend Options:**
-- **Python** (default): Pure Python implementation, no compilation needed
-- **Fortran** (optional): Original Fortran code via f2py, ~5-10x faster
-- **JAX** (experimental): JIT compilation, autodiff, vmap for batch simulations
+The default Python backend provides a pure Python implementation of the TEP process. The optional Fortran backend uses the original code via f2py for ~5-10x faster simulations.
 
 ## Process Overview
 
