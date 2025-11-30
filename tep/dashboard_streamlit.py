@@ -455,11 +455,11 @@ def run_simulation_step():
         sim_data['idv'] = sim_data['idv'][::step]
 
 
-@st.fragment
+@st.fragment(run_every=1.0)
 def simulation_fragment():
     """Fragment that runs the simulation and updates plots.
 
-    Using @st.fragment allows this to update independently
+    Using @st.fragment with run_every allows this to update independently
     of the main app, reducing full-page reruns and blinking.
     """
     # Debug: log every fragment run
@@ -526,11 +526,6 @@ def simulation_fragment():
         else:
             st.info("Start the simulation to see variable plots.")
 
-    # Trigger fragment rerun if simulation is running
-    if st.session_state.running and not st.session_state.shutdown:
-        import time as time_module
-        time_module.sleep(0.3)  # Small delay to prevent CPU overload
-        st.rerun(scope="fragment")
 
 
 def main():
