@@ -1130,6 +1130,58 @@ class JaxTEProcessWrapper:
             raise ValueError(f"State must have {self._nn} elements")
         self.yy = state
 
+    @property
+    def state(self) -> 'JaxTEProcessState':
+        """Get state wrapper for TEPSimulator compatibility."""
+        return JaxTEProcessState(self)
+
+    @property
+    def disturbances(self) -> 'JaxDisturbanceManager':
+        """Get disturbance manager for API compatibility."""
+        return JaxDisturbanceManager(self)
+
+
+class JaxTEProcessState:
+    """State wrapper that mimics PythonTEProcessState interface.
+
+    This provides the `state.yy`, `state.xmeas`, `state.xmv` interface
+    expected by TEPSimulator.
+    """
+
+    def __init__(self, wrapper: 'JaxTEProcessWrapper'):
+        self._wrapper = wrapper
+
+    @property
+    def yy(self) -> np.ndarray:
+        return self._wrapper.yy
+
+    @yy.setter
+    def yy(self, value: np.ndarray):
+        self._wrapper.yy = value
+
+    @property
+    def xmeas(self) -> np.ndarray:
+        return self._wrapper.xmeas
+
+    @property
+    def xmv(self) -> np.ndarray:
+        return self._wrapper.xmv
+
+
+class JaxDisturbanceManager:
+    """Disturbance manager wrapper for API compatibility."""
+
+    def __init__(self, wrapper: 'JaxTEProcessWrapper'):
+        self._wrapper = wrapper
+
+    def clear_all_disturbances(self):
+        """Clear all disturbances (set IDV to 0)."""
+        self._wrapper.clear_disturbances()
+
+    def set_disturbance(self, index: int, value: int):
+        """Set a disturbance variable."""
+        self._wrapper.set_idv(index, value)
+
 
 # =============================================================================
 # Utility Functions
