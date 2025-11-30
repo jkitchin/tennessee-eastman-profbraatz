@@ -349,10 +349,13 @@ def run_simulation_step():
         if st.session_state.get(f'idv_{i}', False):
             disturbances.append(i + 1)
 
-    # Log when disturbances change
-    prev_disturbances = getattr(simulator, '_prev_disturbances', [])
-    if disturbances != prev_disturbances:
+    # Only update disturbances when they change (avoid clearing/resetting every step)
+    prev_disturbances = getattr(simulator, '_prev_disturbances', None)
+    if prev_disturbances is None or set(disturbances) != set(prev_disturbances):
         logger.info(f"Disturbances changed: {prev_disturbances} -> {disturbances}")
+        simulator.clear_disturbances()
+        for idv in disturbances:
+            simulator.set_disturbance(idv, 1)
         simulator._prev_disturbances = disturbances.copy()
 
     # Update control mode
@@ -367,15 +370,12 @@ def run_simulation_step():
         for i, val in enumerate(mv_values):
             simulator.set_mv(i + 1, val)
 
-    # Apply disturbances
-    simulator.clear_disturbances()
-    for idv in disturbances:
-        simulator.set_disturbance(idv, 1)
-
     # Log active disturbances and pressure on EVERY fragment run
     active = simulator.get_active_disturbances()
     meas = simulator.get_measurements()
-    logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, chk: {disturbances}")
+    # Also check internal IDV state directly
+    idv_state = list(simulator.process.idv) if hasattr(simulator.process, 'idv') else 'N/A'
+    logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, idv_raw: {idv_state[:8]}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
