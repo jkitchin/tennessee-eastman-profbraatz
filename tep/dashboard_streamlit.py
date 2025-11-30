@@ -336,6 +336,10 @@ def run_simulation_step():
     if simulator is None:
         return
 
+    # Log simulator and process object IDs to detect if they're changing
+    proc = simulator.process
+    logger.info(f"SIM_ID={id(simulator)}, PROC_ID={id(proc)}, _idv_ID={id(proc._idv)}")
+
     # Get parameters from session state
     # Note: Widget values are stored with their key names in session_state
     speed = st.session_state.get('speed', 50)
@@ -378,8 +382,11 @@ def run_simulation_step():
     if hasattr(proc, '_teproc'):
         tp = proc._teproc
         ftm3 = tp.ftm[3] if hasattr(tp, 'ftm') else 'N/A'
-        idv6 = proc.idv[6] if hasattr(proc, 'idv') else 'N/A'
-        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, idv[6]={idv6}, ftm3={ftm3:.2f}")
+        # Log the ACTUAL internal _idv value (not the copy from .idv property)
+        idv6_internal = proc._idv[6] if hasattr(proc, '_idv') else 'N/A'
+        # Also log yy[6] which is the reactor pressure state variable
+        yy6 = proc.yy[6] if hasattr(proc, 'yy') else 'N/A'
+        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, _idv[6]={idv6_internal}, ftm3={ftm3:.2f}, yy[6]={yy6:.2f}")
     else:
         logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}")
 
