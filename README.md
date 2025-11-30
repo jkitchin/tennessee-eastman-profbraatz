@@ -6,14 +6,14 @@ colorTo: green
 sdk: docker
 app_file: app.py
 pinned: false
-license: mit
+license: bsd-3-clause
 ---
 
 # Tennessee Eastman Process Simulator
 
 [![Tests](https://github.com/jkitchin/tennessee-eastman-profbraatz/actions/workflows/tests.yml/badge.svg)](https://github.com/jkitchin/tennessee-eastman-profbraatz/actions/workflows/tests.yml)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 A Python interface to the Tennessee Eastman Process (TEP) simulator with both pure Python and optional Fortran backends.
 
@@ -422,7 +422,7 @@ The Tennessee Eastman Process is a realistic simulation of an industrial chemica
 
 ## License
 
-This project is licensed under the MIT License - see the original copyright notices below.
+This project is licensed under the BSD-3-Clause License - see the LICENSE file and original copyright notices below.
 
 ---
 
