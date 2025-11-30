@@ -29,24 +29,35 @@ sys.path.insert(0, repo_root)
 # Debug: show where tep is being imported from
 import tep
 import numpy as np
+import sys
 print(f"[streamlit_app] TEP loaded from: {tep.__file__}")
 print(f"[streamlit_app] TEP version: {tep.__version__}")
 print(f"[streamlit_app] TEP_BACKEND env: {os.environ.get('TEP_BACKEND')}")
 print(f"[streamlit_app] Available backends: {tep.get_available_backends()}")
 print(f"[streamlit_app] Default backend: {tep.get_default_backend()}")
 print(f"[streamlit_app] NumPy version: {np.__version__}")
+print(f"[streamlit_app] Python version: {sys.version}")
+print(f"[streamlit_app] Float64 epsilon: {np.finfo(np.float64).eps}")
 
-# Quick sanity test of Python backend
-print("[streamlit_app] Running quick Python backend test...")
+# Extended sanity test of Python backend with IDV(7)
+print("[streamlit_app] Running extended Python backend test...")
 test_sim = tep.TEPSimulator(backend='python')
 test_sim.initialize()
-for _ in range(100):
+# Stabilize
+for _ in range(2000):
     test_sim.step()
+p_before = test_sim.get_measurements()[6]
+print(f"[streamlit_app] Before IDV(7): P={p_before:.1f} kPa")
+# Enable IDV(7) and run
 test_sim.set_disturbance(7, 1)
-for _ in range(100):
-    test_sim.step()
-meas = test_sim.get_measurements()
-print(f"[streamlit_app] Test pressure after IDV(7): {meas[6]:.1f} kPa (should be ~2690-2710)")
+for batch in range(5):
+    for _ in range(1000):
+        if not test_sim.step():
+            print(f"[streamlit_app] SHUTDOWN in test at batch {batch}!")
+            break
+    p_now = test_sim.get_measurements()[6]
+    print(f"[streamlit_app]   Batch {batch+1}: P={p_now:.1f} kPa")
+print(f"[streamlit_app] Test completed, final P={test_sim.get_measurements()[6]:.1f} kPa")
 del test_sim
 
 # Now import and run the dashboard
