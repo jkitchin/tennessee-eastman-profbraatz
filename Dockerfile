@@ -9,6 +9,7 @@ WORKDIR /app
 # Install system dependencies (gfortran for Fortran backend)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gfortran \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -19,15 +20,20 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Install build dependencies for Fortran backend
-RUN pip install --no-cache-dir meson meson-python ninja
+RUN pip install --no-cache-dir meson meson-python ninja numpy
 
 # Copy the entire package
 COPY . /app
 
 # Install the TEP package with Fortran backend
-# Use verbose mode to see build output
-RUN pip install --no-cache-dir -v . --config-settings=setup-args=-Dfortran=enabled 2>&1 | tail -50 || \
-    (echo "Fortran build failed, falling back to Python-only" && pip install --no-cache-dir .)
+# Show full build output for debugging
+RUN echo "=== Building TEP with Fortran backend ===" && \
+    pip install --no-cache-dir -v . --config-settings=setup-args=-Dfortran=enabled 2>&1 && \
+    echo "=== Verifying Fortran extension ===" && \
+    python -c "from tep._fortran import teprob; print('Fortran extension loaded successfully')" || \
+    (echo "=== Fortran build/import failed, falling back to Python-only ===" && \
+     pip install --no-cache-dir . && \
+     python -c "from tep import is_fortran_available; print(f'Fortran available: {is_fortran_available()}')")
 
 # Create non-root user for security (required by HF Spaces)
 RUN useradd -m -u 1000 user
