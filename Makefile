@@ -3,7 +3,7 @@
 
 .PHONY: help install install-dev install-web test test-verbose test-coverage \
         lint format dashboard run-example clean clean-pyc clean-build \
-        docs build publish backend-info backend-test
+        docs build publish backend-info backend-test hf-upload
 
 # Default target
 help:
@@ -279,3 +279,11 @@ backend-test:
 	@echo "Testing Backend Parity (Python vs Fortran)"
 	@echo "==========================================="
 	cd /tmp && python $(CURDIR)/examples/compare_fortran_python.py
+
+# ============================================================================
+# Deployment targets
+# ============================================================================
+
+hf-upload:
+	@echo "Uploading to Hugging Face Spaces..."
+	hf upload jkitchin/tennessee-eastman-process . --repo-type=space --commit-message "update"

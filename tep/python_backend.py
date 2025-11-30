@@ -285,6 +285,9 @@ class PythonTEProcess:
         # Random number generator state
         self._g = 4651207995.0  # Default Fortran seed
 
+        # Shutdown flag - once set, no further integration
+        self._shutdown = False
+
         # State vectors
         self.yy = np.zeros(self._nn, dtype=np.float64)
         self.yp = np.zeros(self._nn, dtype=np.float64)
@@ -563,6 +566,9 @@ class PythonTEProcess:
         Replicates Fortran TEINIT subroutine. Sets initial state values,
         physical constants, and calls TEFUNC to compute initial derivatives.
         """
+        # Reset shutdown flag
+        self._shutdown = False
+
         # Reset random seed
         self._g = 4651207995.0
 
@@ -1247,9 +1253,10 @@ class PythonTEProcess:
             tp.vcv[i] = np.clip(tp.vcv[i], 0.0, 100.0)
             yp[38 + i] = (tp.vcv[i] - vpos[i]) / tp.vtau[i]
 
-        # Shutdown: zero all derivatives
+        # Shutdown: zero all derivatives and set flag
         if isd != 0:
             yp[:] = 0.0
+            self._shutdown = True
 
     # =========================================================================
     # Public Interface Methods
@@ -1266,12 +1273,34 @@ class PythonTEProcess:
         if not self._initialized:
             raise RuntimeError("Process not initialized. Call initialize() first.")
 
+        # Don't integrate if already shutdown
+        if self._shutdown:
+            self.time += dt
+            return
+
         # Call tefunc to get derivatives
         self._tefunc()
+
+        # If shutdown was triggered in tefunc, don't integrate
+        if self._shutdown:
+            self.time += dt
+            return
+
+        # Check for numerical instability before integration
+        if not np.all(np.isfinite(self.yp)):
+            self._shutdown = True
+            self.yp[:] = 0.0
+            self.time += dt
+            return
 
         # Euler integration: yy = yy + yp * dt
         self.yy[:] = self.yy + self.yp * dt
         self.time += dt
+
+        # Check for numerical instability after integration
+        if not np.all(np.isfinite(self.yy)):
+            self._shutdown = True
+            return
 
         # Apply valve constraints
         self._apply_constraints()
@@ -1358,7 +1387,10 @@ class PythonTEProcess:
 
     def is_shutdown(self) -> bool:
         """Check if process is in shutdown state."""
-        # Check shutdown conditions
+        # Return stored flag first (handles numerical instability)
+        if self._shutdown:
+            return True
+        # Also check shutdown conditions from measurements
         tp = self._teproc
         if self._xmeas[6] > 3000.0:
             return True

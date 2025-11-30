@@ -317,9 +317,19 @@ class TEPSimulator:
 
             # Integrate one step
             yp = self.process.evaluate(self.time, self.process.state.yy)
-            self.time += self.dt
-            self.process.state.yy = self.process.state.yy + yp * self.dt
 
+            # Check for numerical instability in derivatives
+            if not np.all(np.isfinite(yp)):
+                return False
+
+            self.time += self.dt
+            new_state = self.process.state.yy + yp * self.dt
+
+            # Check for numerical instability in new state
+            if not np.all(np.isfinite(new_state)):
+                return False
+
+            self.process.state.yy = new_state
             self.step_count += 1
 
             # Process fault detectors
