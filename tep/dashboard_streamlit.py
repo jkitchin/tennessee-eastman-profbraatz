@@ -372,9 +372,10 @@ def run_simulation_step():
     for idv in disturbances:
         simulator.set_disturbance(idv, 1)
 
-    # Log active disturbances on EVERY fragment run (not just every 100 steps)
+    # Log active disturbances and pressure on EVERY fragment run
     active = simulator.get_active_disturbances()
-    logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, active IDVs: {active}, checkboxes: {disturbances}, sim_id={id(simulator)}")
+    meas = simulator.get_measurements()
+    logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, chk: {disturbances}")
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
