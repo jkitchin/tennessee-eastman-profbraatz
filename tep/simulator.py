@@ -27,7 +27,7 @@ from .constants import (
 )
 
 # Backend type alias
-BackendType = Literal["fortran", "python"]
+BackendType = Literal["fortran", "python", "jax"]
 
 
 def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
@@ -36,14 +36,14 @@ def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
     Parameters
     ----------
     backend : str
-        Backend type: 'fortran' or 'python'
+        Backend type: 'fortran', 'python', or 'jax'
     random_seed : int, optional
         Random seed for reproducibility
 
     Returns
     -------
     process
-        FortranTEProcess or PythonTEProcess instance
+        FortranTEProcess, PythonTEProcess, or JaxTEProcessWrapper instance
     """
     if backend == "fortran":
         try:
@@ -57,8 +57,17 @@ def _create_backend(backend: BackendType, random_seed: Optional[int] = None):
     elif backend == "python":
         from .python_backend import PythonTEProcess
         return PythonTEProcess(random_seed)
+    elif backend == "jax":
+        try:
+            from .jax_backend import JaxTEProcessWrapper
+            return JaxTEProcessWrapper(random_seed)
+        except ImportError as e:
+            raise ImportError(
+                "JAX backend not available. Install with 'pip install jax jaxlib' "
+                "or use backend='python'. Error: " + str(e)
+            )
     else:
-        raise ValueError(f"Unknown backend: {backend}. Use 'fortran' or 'python'.")
+        raise ValueError(f"Unknown backend: {backend}. Use 'fortran', 'python', or 'jax'.")
 
 # Import detector types for type checking (avoid circular imports)
 if TYPE_CHECKING:
@@ -146,13 +155,14 @@ class TEPSimulator:
         Args:
             random_seed: Random seed for reproducibility
             control_mode: Control mode (open_loop, closed_loop, or manual)
-            backend: Simulation backend ('fortran', 'python', or None for auto)
+            backend: Simulation backend ('fortran', 'python', 'jax', or None for auto)
                 - None: Automatically selects best available (default)
                 - 'fortran': Uses original Fortran code via f2py (~5-10x faster)
                 - 'python': Pure Python implementation (no compilation needed)
+                - 'jax': JAX-based implementation (supports JIT, autodiff, GPU)
 
         Raises:
-            ImportError: If Fortran extension is not available and backend='fortran'
+            ImportError: If requested backend is not available
         """
         if random_seed is None:
             random_seed = DEFAULT_RANDOM_SEED

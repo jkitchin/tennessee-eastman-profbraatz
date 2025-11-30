@@ -2,11 +2,12 @@
 Tennessee Eastman Process (TEP) Simulator
 
 This package provides a Python interface to the Tennessee Eastman Process
-simulator with two backend options:
+simulator with multiple backend options:
 
 Backends:
     - 'python': Pure Python implementation (default, no compilation needed)
     - 'fortran': Original Fortran code via f2py (optional, ~5-10x faster)
+    - 'jax': JAX-based implementation (optional, supports JIT/autodiff/GPU)
 
 Installation:
     Default (Python only):
@@ -14,6 +15,9 @@ Installation:
 
     With Fortran acceleration (requires gfortran):
         pip install tep --config-settings=setup-args=-Dfortran=enabled
+
+    With JAX support (for JIT compilation, autodiff, GPU acceleration):
+        pip install tep[jax]
 
 Based on the original Fortran code by James J. Downs and Ernest F. Vogel,
 with modifications by Evan L. Russell, Leo H. Chiang, and Richard D. Braatz.
@@ -52,6 +56,15 @@ try:
 except ImportError:
     _FORTRAN_AVAILABLE = False
     FortranTEProcess = None
+
+# Try to import JAX backend (optional)
+try:
+    from .jax_backend import JaxTEProcess, JaxTEProcessWrapper, is_jax_available
+    _JAX_AVAILABLE = is_jax_available()
+except ImportError:
+    _JAX_AVAILABLE = False
+    JaxTEProcess = None
+    JaxTEProcessWrapper = None
 from .controller_base import (
     BaseController,
     ControllerRegistry,
@@ -86,10 +99,13 @@ def get_available_backends():
     list
         List of available backend names. Always includes 'python'.
         Includes 'fortran' if the Fortran extension was compiled.
+        Includes 'jax' if JAX is installed.
     """
     backends = ["python"]
     if _FORTRAN_AVAILABLE:
         backends.insert(0, "fortran")
+    if _JAX_AVAILABLE:
+        backends.append("jax")
     return backends
 
 
@@ -104,8 +120,10 @@ def get_default_backend():
     """
     import os
     env_backend = os.environ.get('TEP_BACKEND', '').lower()
-    if env_backend in ('python', 'fortran'):
+    if env_backend in ('python', 'fortran', 'jax'):
         if env_backend == 'fortran' and not _FORTRAN_AVAILABLE:
+            return 'python'
+        if env_backend == 'jax' and not _JAX_AVAILABLE:
             return 'python'
         return env_backend
     return "fortran" if _FORTRAN_AVAILABLE else "python"
@@ -122,6 +140,17 @@ def is_fortran_available():
     return _FORTRAN_AVAILABLE
 
 
+def is_jax_available():
+    """Check if JAX backend is available.
+
+    Returns
+    -------
+    bool
+        True if JAX is installed and can be imported.
+    """
+    return _JAX_AVAILABLE
+
+
 __all__ = [
     # Simulator
     "TEPSimulator",
@@ -129,6 +158,8 @@ __all__ = [
     # Backends
     "PythonTEProcess",
     "FortranTEProcess",
+    "JaxTEProcess",
+    "JaxTEProcessWrapper",
     # Controllers
     "PIController",
     "DecentralizedController",
@@ -159,6 +190,7 @@ __all__ = [
     "get_available_backends",
     "get_default_backend",
     "is_fortran_available",
+    "is_jax_available",
     # Dashboard launchers
     "run_dashboard",
 ]
