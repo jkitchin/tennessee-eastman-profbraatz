@@ -388,7 +388,27 @@ def create_layout():
                                 html.Li("Scroll down to see all 41 measurements and 12 MVs"),
                             ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8'})
                         ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
-                                 'maxWidth': '500px', 'margin': '0 auto'})
+                                 'maxWidth': '500px', 'margin': '0 auto'}),
+                        html.Div([
+                            html.H4("References:", style={'color': '#34495e', 'marginBottom': '15px', 'marginTop': '30px'}),
+                            html.Ul([
+                                html.Li([
+                                    "J.J. Downs and E.F. Vogel, ",
+                                    html.Em("A plant-wide industrial process control problem"),
+                                    ", Computers and Chemical Engineering, 17:245-255 (1993)."
+                                ]),
+                                html.Li([
+                                    "N.L. Ricker, ",
+                                    html.Em("Decentralized control of the Tennessee Eastman Challenge Process"),
+                                    ", J. Process Control, 6:205-221 (1996)."
+                                ]),
+                                html.Li([
+                                    "A. Bathelt, N.L. Ricker, M. Jelali, ",
+                                    html.Em("Revision of the Tennessee Eastman Process Model"),
+                                    ", IFAC-PapersOnLine, 48:309-314 (2015)."
+                                ]),
+                            ], style={'textAlign': 'left', 'color': '#555', 'lineHeight': '1.8', 'fontSize': '14px'})
+                        ], style={'maxWidth': '600px', 'margin': '0 auto'})
                     ], style={'textAlign': 'center', 'padding': '100px 20px'})
                 ], style={'display': 'block'}),
 
