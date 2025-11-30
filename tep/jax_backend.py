@@ -28,6 +28,10 @@ Example:
 from __future__ import annotations
 
 import jax
+
+# Enable 64-bit floats in JAX (must be set before any JAX operations)
+jax.config.update("jax_enable_x64", True)
+
 import jax.numpy as jnp
 from jax import lax
 from typing import NamedTuple, Optional, Tuple
