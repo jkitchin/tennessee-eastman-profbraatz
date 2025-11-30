@@ -379,7 +379,13 @@ def run_simulation_step():
 
     # Run more simulation steps per update to reduce rerun frequency
     steps_per_update = speed * 10  # Run 10x more steps before updating UI
-    for _ in range(steps_per_update):
+
+    # Log pressure at start and end of batch if IDV(7) is active
+    if 7 in disturbances:
+        meas_start = simulator.get_measurements()
+        logger.info(f"  Batch start: step={simulator.step_count}, P={meas_start[6]:.1f}kPa")
+
+    for i in range(steps_per_update):
         if not simulator.step():
             st.session_state.running = False
             st.session_state.shutdown = True
@@ -393,21 +399,30 @@ def run_simulation_step():
             logger.warning(f"  Active IDVs: {simulator.get_active_disturbances()}")
             return
 
-        # Record data at specified interval
-        current_time_sec = simulator.time * 3600
-        if current_time_sec - st.session_state.last_output_time >= output_interval:
-            st.session_state.last_output_time = current_time_sec
-            sim_data['time'].append(simulator.time * 60)  # minutes
+        # Log every 100 steps if IDV(7) active to track pressure
+        if 7 in disturbances and i > 0 and i % 100 == 0:
+            meas_mid = simulator.get_measurements()
+            logger.info(f"    step {simulator.step_count}: P={meas_mid[6]:.1f}kPa")
 
-            meas = simulator.get_measurements()
-            for i in range(NUM_MEASUREMENTS):
-                sim_data['measurements'][i].append(meas[i])
+    if 7 in disturbances:
+        meas_end = simulator.get_measurements()
+        logger.info(f"  Batch end: step={simulator.step_count}, P={meas_end[6]:.1f}kPa")
 
-            mvs = simulator.get_manipulated_vars()
-            for i in range(NUM_MANIPULATED_VARS):
-                sim_data['mvs'][i].append(mvs[i])
+    # Record data at specified interval
+    current_time_sec = simulator.time * 3600
+    if current_time_sec - st.session_state.last_output_time >= output_interval:
+        st.session_state.last_output_time = current_time_sec
+        sim_data['time'].append(simulator.time * 60)  # minutes
 
-            sim_data['idv'].append(simulator.get_active_disturbances())
+        meas = simulator.get_measurements()
+        for i in range(NUM_MEASUREMENTS):
+            sim_data['measurements'][i].append(meas[i])
+
+        mvs = simulator.get_manipulated_vars()
+        for i in range(NUM_MANIPULATED_VARS):
+            sim_data['mvs'][i].append(mvs[i])
+
+        sim_data['idv'].append(simulator.get_active_disturbances())
 
     # Limit stored data
     max_points = 10000
