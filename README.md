@@ -1,3 +1,15 @@
+---
+title: Tennessee Eastman Process Simulator
+emoji: 🏭
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: "1.37.0"
+app_file: streamlit_app.py
+pinned: false
+license: bsd-3-clause
+---
+
 # Tennessee Eastman Process Simulator
 
 [![Tests](https://github.com/jkitchin/tennessee-eastman-profbraatz/actions/workflows/tests.yml/badge.svg)](https://github.com/jkitchin/tennessee-eastman-profbraatz/actions/workflows/tests.yml)
