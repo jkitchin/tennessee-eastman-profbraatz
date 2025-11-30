@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          lfs: true
 
-      - name: Push to Hugging Face Spaces
+      - name: Install Hugging Face CLI
+        run: pip install huggingface_hub[cli]
+
+      - name: Upload to Hugging Face Spaces
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push https://jkitchin:$HF_TOKEN@huggingface.co/spaces/jkitchin/tennessee-eastman-process master:main --force
+          hf upload jkitchin/tennessee-eastman-process . --repo-type=space --commit-message "Deploy from GitHub Actions"
