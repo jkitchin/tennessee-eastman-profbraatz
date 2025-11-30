@@ -6,7 +6,7 @@ colorTo: green
 sdk: docker
 app_file: app.py
 pinned: false
-license: bsd-3-clause
+license: mit
 ---
 
 # Tennessee Eastman Process Simulator
