@@ -12,9 +12,8 @@ pip install -e .
 pip install -e . --config-settings=setup-args=-Dfortran=enabled
 
 # With optional dependencies
-pip install -e ".[dev]"        # Dev tools (pytest, matplotlib, dash, streamlit)
+pip install -e ".[dev]"        # Dev tools (pytest, matplotlib, dash)
 pip install -e ".[web]"        # Dash web dashboard
-pip install -e ".[streamlit]"  # Streamlit web dashboard
 ```
 
 ## Backend Selection
@@ -40,7 +39,6 @@ pytest -xvs tests/test_simulator.py::test_name  # Run single test with output
 ```bash
 tep-sim --duration 2 --faults 1 --output data.dat  # Batch simulation
 tep-web                                             # Launch Dash dashboard
-tep-streamlit                                       # Launch Streamlit dashboard
 ```
 
 ## Architecture
@@ -53,7 +51,6 @@ tep-streamlit                                       # Launch Streamlit dashboard
 - `tep/detector_base.py`, `detector_plugins.py` - Fault detection framework
 - `tep/cli.py` - Batch simulation CLI (tep-sim)
 - `tep/dashboard_dash.py` - Dash web dashboard (tep-web)
-- `tep/dashboard_streamlit.py` - Streamlit web dashboard (tep-streamlit)
 - `tep/_fortran/` - Compiled Fortran extension (optional)
 
 ## Key Patterns

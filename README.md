@@ -10,10 +10,6 @@ Based on the original Fortran code by J.J. Downs and E.F. Vogel (1993), with mod
 
 Python wrapper developed with Claude Code by John Kitchin.
 
-## Live Demo
-
-Try the simulator online: **[Tennessee Eastman Process Simulator](https://tennessee-eastman-process.streamlit.app/)**
-
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
@@ -24,7 +20,7 @@ Try the simulator online: **[Tennessee Eastman Process Simulator](https://tennes
 - **Controller plugin system** for custom control strategies
 - **Batch simulation CLI** (`tep-sim`) for scripted data generation
 - **Real-time streaming interface** for dashboard integration
-- **Interactive web dashboards** (`tep-web` for Dash, `tep-streamlit` for Streamlit)
+- **Interactive web dashboard** (`tep-web` powered by Dash)
 - **Graphical plotting** of simulation results (optional matplotlib dependency)
 - **Reproducible simulations** with seeded random number generation
 
@@ -52,9 +48,6 @@ pip install -e . --config-settings=setup-args=-Dfortran=enabled
 
 # With web dashboard support (Dash)
 pip install -e ".[web]"
-
-# With Streamlit dashboard
-pip install -e ".[streamlit]"
 
 # For development (includes pytest, matplotlib)
 pip install -e ".[dev]"
@@ -336,7 +329,6 @@ tep/
 ├── detector_plugins.py   # Built-in detector implementations (PCA, EWMA, etc.)
 ├── cli.py                # Batch simulation CLI (tep-sim command)
 ├── dashboard_dash.py     # Web-based Dash dashboard (tep-web command)
-├── dashboard_streamlit.py # Streamlit dashboard (tep-streamlit command)
 └── _fortran/             # Compiled Fortran extension (optional)
     └── teprob.cpython-*.so
 ```

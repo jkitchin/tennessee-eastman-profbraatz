@@ -148,6 +148,6 @@ pip install -e .
 # With Fortran acceleration (~5-10x faster, requires gfortran)
 pip install -e . --config-settings=setup-args=-Dfortran=enabled
 
-# With dev tools (pytest, matplotlib, dash, streamlit)
+# With dev tools (pytest, matplotlib, dash)
 pip install -e ".[dev]"
 ```

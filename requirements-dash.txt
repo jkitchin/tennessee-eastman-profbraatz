@@ -1,0 +1,7 @@
+# TEP Dash Dashboard dependencies
+# For deployment on Hugging Face Spaces, Render, Railway, etc.
+
+numpy>=1.20.0
+dash>=2.0.0
+plotly>=5.0.0
+gunicorn>=21.0.0
