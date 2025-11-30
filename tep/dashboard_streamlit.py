@@ -389,11 +389,11 @@ def run_simulation_step():
         ftm3 = tp.ftm[3] if hasattr(tp, 'ftm') else 'N/A'
         # Log the ACTUAL internal _idv value (not the copy from .idv property)
         idv6_internal = proc._idv[6] if hasattr(proc, '_idv') else 'N/A'
-        # Log a hash of the state vector to detect if it's being reset
-        yy_hash = hash(proc.yy.tobytes()) if hasattr(proc, 'yy') else 'N/A'
         # Sum of first 10 state variables (to detect state changes)
         yy_sum = np.sum(proc.yy[:10]) if hasattr(proc, 'yy') else 'N/A'
-        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, _idv[6]={idv6_internal}, ftm3={ftm3:.2f}, yy_sum={yy_sum:.2f}")
+        # Log the RNG state to check for divergence
+        rng_g = proc._g if hasattr(proc, '_g') else 'N/A'
+        logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}, _idv[6]={idv6_internal}, ftm3={ftm3:.2f}, yy_sum={yy_sum:.2f}, rng_g={rng_g}")
     else:
         logger.info(f"t={simulator.time:.3f}hr, step={simulator.step_count}, P={meas[6]:.1f}kPa, IDVs: {active}")
 

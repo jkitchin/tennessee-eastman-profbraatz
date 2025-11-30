@@ -330,7 +330,11 @@ class PythonTEProcess:
         float
             Random number
         """
-        self._g = (self._g * 9228907.0) % 4294967296.0
+        # Use integer arithmetic to avoid float64 precision loss
+        # The product can exceed 2^53, so we use Python's arbitrary precision int
+        g_int = int(self._g)
+        g_int = (g_int * 9228907) % 4294967296
+        self._g = float(g_int)
         if i >= 0:
             return self._g / 4294967296.0
         else:
