@@ -668,7 +668,7 @@ def main():
     # Auto-rerun when simulation is running
     if st.session_state.running and not st.session_state.shutdown:
         import time
-        time.sleep(0.5)  # Brief delay to prevent too-fast reruns
+        time.sleep(0.05)  # 50ms delay between updates
         st.rerun()
 
 
