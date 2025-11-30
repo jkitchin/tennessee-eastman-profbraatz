@@ -359,6 +359,7 @@ def run_simulation_step():
 
     # Only update disturbances when they change (avoid clearing/resetting every step)
     prev_disturbances = getattr(simulator, '_prev_disturbances', None)
+    logger.info(f"Disturbance check: prev={prev_disturbances}, current={disturbances}, will_update={prev_disturbances is None or set(disturbances) != set(prev_disturbances)}")
     if prev_disturbances is None or set(disturbances) != set(prev_disturbances):
         logger.info(f"Disturbances changed: {prev_disturbances} -> {disturbances}")
         simulator.clear_disturbances()
