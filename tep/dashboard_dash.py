@@ -37,7 +37,7 @@ from .constants import (
     NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES, INITIAL_STATES,
     SAFETY_LIMITS, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES
 )
-from . import get_available_backends, get_default_backend
+from . import get_available_backends, get_default_backend, __version__
 
 
 # Global simulator instance and data storage
@@ -173,6 +173,7 @@ def create_layout():
             html.P("Interactive Process Control Dashboard",
                   style={'textAlign': 'center', 'color': '#7f8c8d', 'marginTop': '0', 'marginBottom': '5px'}),
             html.P([
+                f"v{__version__} | ",
                 "By John Kitchin | ",
                 html.A("GitHub Repository",
                       href="https://github.com/jkitchin/tennessee-eastman-profbraatz",
