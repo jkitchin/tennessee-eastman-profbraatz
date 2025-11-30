@@ -384,7 +384,13 @@ def run_simulation_step():
             st.session_state.running = False
             st.session_state.shutdown = True
             meas = simulator.get_measurements()
-            st.session_state.shutdown_reason = get_shutdown_reason(meas)
+            reason = get_shutdown_reason(meas)
+            st.session_state.shutdown_reason = reason
+            logger.warning(f"SHUTDOWN at t={simulator.time:.3f}hr: {reason}")
+            logger.warning(f"  Reactor pressure: {meas[6]:.1f} kPa")
+            logger.warning(f"  Reactor temp: {meas[8]:.1f} C")
+            logger.warning(f"  Reactor level: {meas[7]:.1f}%")
+            logger.warning(f"  Active IDVs: {simulator.get_active_disturbances()}")
             return
 
         # Record data at specified interval
