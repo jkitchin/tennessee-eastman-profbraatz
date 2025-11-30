@@ -38,10 +38,6 @@ web = [
     "dash>=2.0.0",
     "plotly>=5.0.0",
 ]
-streamlit = [
-    "streamlit>=1.20.0",
-    "plotly>=5.0.0",
-]
 plot = [
     "matplotlib>=3.5.0",
 ]
@@ -51,12 +47,10 @@ dev = [
     "matplotlib>=3.5.0",
     "dash>=2.0.0",
     "plotly>=5.0.0",
-    "streamlit>=1.20.0",
 ]
 
 [project.scripts]
 tep-web = "tep.dashboard_dash:main"
-tep-streamlit = "tep.dashboard_streamlit:cli_main"
 tep-sim = "tep.cli:main"
 
 # Default: Python-only (no Fortran compilation required)
