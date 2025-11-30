@@ -641,6 +641,288 @@ class TestJITCompatibility:
         assert state.time > 0
 
 
+class TestThermodynamicFunctions:
+    """Test JAX implementations of thermodynamic functions."""
+
+    def test_tesub1_liquid_enthalpy(self):
+        """Test liquid enthalpy calculation."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        # Test with pure component D at 100 deg C
+        z = jnp.zeros(8)
+        z = z.at[3].set(1.0)  # Pure component D
+
+        h = process._tesub1(z, 100.0, 0)  # ity=0 for liquid
+        assert h > 0  # Enthalpy should be positive at 100 C
+
+    def test_tesub1_gas_enthalpy(self):
+        """Test gas enthalpy calculation."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        # Test with pure component D at 100 deg C
+        z = jnp.zeros(8)
+        z = z.at[3].set(1.0)  # Pure component D
+
+        h_liquid = process._tesub1(z, 100.0, 0)  # ity=0 for liquid
+        h_gas = process._tesub1(z, 100.0, 1)     # ity=1 for gas
+
+        # Both should be computed and finite
+        assert jnp.isfinite(h_liquid)
+        assert jnp.isfinite(h_gas)
+        # They should be different (liquid vs gas have different coefficients)
+        assert h_liquid != h_gas
+
+    def test_tesub1_pressure_correction(self):
+        """Test pressure correction for compressor (ity=2)."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        z = jnp.zeros(8)
+        z = z.at[3].set(1.0)
+
+        h_gas = process._tesub1(z, 100.0, 1)      # Gas without correction
+        h_comp = process._tesub1(z, 100.0, 2)     # Gas with pressure correction
+
+        # Pressure correction should reduce enthalpy
+        assert h_comp < h_gas
+
+    def test_tesub1_mixture(self):
+        """Test enthalpy calculation for mixture."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        # Typical liquid composition
+        z = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+
+        h = process._tesub1(z, 80.0, 0)
+        assert jnp.isfinite(h)
+        assert h > 0
+
+    def test_tesub3_derivative(self):
+        """Test enthalpy derivative dH/dT."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        z = jnp.zeros(8)
+        z = z.at[3].set(1.0)
+
+        dh = process._tesub3(z, 100.0, 0)
+        assert dh > 0  # Heat capacity should be positive
+
+    def test_tesub3_numerical_derivative(self):
+        """Test that _tesub3 matches numerical derivative of _tesub1."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        z = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        t = 80.0
+        dt = 0.001
+
+        # Analytical derivative
+        dh_analytical = process._tesub3(z, t, 0)
+
+        # Numerical derivative
+        h1 = process._tesub1(z, t - dt, 0)
+        h2 = process._tesub1(z, t + dt, 0)
+        dh_numerical = (h2 - h1) / (2 * dt)
+
+        # Should match within tolerance
+        rel_error = abs(float(dh_analytical - dh_numerical)) / abs(float(dh_analytical))
+        assert rel_error < 0.01
+
+    def test_tesub4_density(self):
+        """Test liquid density calculation."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        # Typical liquid composition
+        x = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+
+        rho = process._tesub4(x, 80.0)
+
+        # Density should be positive and reasonable for organic liquids
+        # Typical range: 0.1 - 5 kmol/m^3
+        assert 0.1 < float(rho) < 5.0
+
+    def test_tesub4_temperature_effect(self):
+        """Test that density decreases with temperature."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        x = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+
+        rho_low = process._tesub4(x, 20.0)
+        rho_high = process._tesub4(x, 120.0)
+
+        # Density should decrease with temperature
+        assert rho_low > rho_high
+
+    def test_tesub2_temperature_iteration(self):
+        """Test temperature from enthalpy iteration."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        # Test round-trip: T -> H -> T
+        z = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        t_original = 80.0
+
+        # Calculate enthalpy at known temperature
+        h = process._tesub1(z, t_original, 0)
+
+        # Recover temperature from enthalpy
+        t_recovered = process._tesub2(z, 50.0, h, 0)  # Start with different initial guess
+
+        # Should recover original temperature
+        assert abs(float(t_recovered) - t_original) < 0.1
+
+    def test_tesub2_different_phases(self):
+        """Test temperature iteration for different phases."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        z = jnp.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.05, 0.05])
+
+        # Test liquid (ity=0)
+        t_original = 70.0
+        h_liquid = process._tesub1(z, t_original, 0)
+        t_recovered = process._tesub2(z, 50.0, h_liquid, 0)
+        assert abs(float(t_recovered) - t_original) < 0.1
+
+        # Test gas (ity=1)
+        h_gas = process._tesub1(z, t_original, 1)
+        t_recovered = process._tesub2(z, 50.0, h_gas, 1)
+        assert abs(float(t_recovered) - t_original) < 0.1
+
+    def test_tesub1_jit_compatible(self):
+        """Test that _tesub1 can be JIT compiled."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        @jax.jit
+        def compute_enthalpy(z, t):
+            return process._tesub1(z, t, 0)
+
+        z = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        h = compute_enthalpy(z, 80.0)
+        assert jnp.isfinite(h)
+
+    def test_tesub2_jit_compatible(self):
+        """Test that _tesub2 can be JIT compiled."""
+        from tep.jax_backend import JaxTEProcess
+
+        process = JaxTEProcess()
+
+        @jax.jit
+        def compute_temperature(z, h):
+            return process._tesub2(z, 80.0, h, 0)
+
+        z = jnp.array([0.0, 0.0, 0.0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        h = process._tesub1(z, 80.0, 0)
+        t = compute_temperature(z, h)
+        assert jnp.isfinite(t)
+        assert abs(float(t) - 80.0) < 0.1
+
+
+class TestThermodynamicComparisonWithPython:
+    """Compare JAX thermodynamic functions with Python backend."""
+
+    def test_tesub1_matches_python(self):
+        """Test that JAX _tesub1 matches Python backend."""
+        from tep.jax_backend import JaxTEProcess
+        from tep.python_backend import PythonTEProcess
+
+        jax_proc = JaxTEProcess()
+        py_proc = PythonTEProcess()
+
+        # Test various compositions and temperatures
+        test_cases = [
+            (np.array([0, 0, 0, 1, 0, 0, 0, 0]), 100.0, 0),
+            (np.array([0, 0, 0, 0.3, 0.25, 0.25, 0.1, 0.1]), 80.0, 0),
+            (np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.05, 0.05]), 120.0, 1),
+            (np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.05, 0.05]), 120.0, 2),
+        ]
+
+        for z_np, t, ity in test_cases:
+            z_jax = jnp.array(z_np)
+
+            h_jax = float(jax_proc._tesub1(z_jax, t, ity))
+            h_py = py_proc._tesub1(z_np, t, ity)
+
+            rel_error = abs(h_jax - h_py) / abs(h_py) if abs(h_py) > 1e-10 else abs(h_jax - h_py)
+            assert rel_error < 0.01, f"Mismatch at z={z_np}, t={t}, ity={ity}: JAX={h_jax}, Python={h_py}"
+
+    def test_tesub3_matches_python(self):
+        """Test that JAX _tesub3 matches Python backend."""
+        from tep.jax_backend import JaxTEProcess
+        from tep.python_backend import PythonTEProcess
+
+        jax_proc = JaxTEProcess()
+        py_proc = PythonTEProcess()
+
+        z_np = np.array([0, 0, 0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        z_jax = jnp.array(z_np)
+        t = 80.0
+
+        for ity in [0, 1, 2]:
+            dh_jax = float(jax_proc._tesub3(z_jax, t, ity))
+            dh_py = py_proc._tesub3(z_np, t, ity)
+
+            rel_error = abs(dh_jax - dh_py) / abs(dh_py) if abs(dh_py) > 1e-10 else abs(dh_jax - dh_py)
+            assert rel_error < 0.01, f"Mismatch at ity={ity}: JAX={dh_jax}, Python={dh_py}"
+
+    def test_tesub4_matches_python(self):
+        """Test that JAX _tesub4 matches Python backend."""
+        from tep.jax_backend import JaxTEProcess
+        from tep.python_backend import PythonTEProcess
+
+        jax_proc = JaxTEProcess()
+        py_proc = PythonTEProcess()
+
+        x_np = np.array([0, 0, 0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        x_jax = jnp.array(x_np)
+
+        for t in [20.0, 80.0, 120.0]:
+            rho_jax = float(jax_proc._tesub4(x_jax, t))
+            rho_py = py_proc._tesub4(x_np, t)
+
+            rel_error = abs(rho_jax - rho_py) / abs(rho_py)
+            assert rel_error < 0.01, f"Mismatch at t={t}: JAX={rho_jax}, Python={rho_py}"
+
+    def test_tesub2_matches_python(self):
+        """Test that JAX _tesub2 matches Python backend."""
+        from tep.jax_backend import JaxTEProcess
+        from tep.python_backend import PythonTEProcess
+
+        jax_proc = JaxTEProcess()
+        py_proc = PythonTEProcess()
+
+        z_np = np.array([0, 0, 0, 0.3, 0.25, 0.25, 0.1, 0.1])
+        z_jax = jnp.array(z_np)
+
+        # Compute enthalpy at known temperature
+        t_original = 80.0
+        h = py_proc._tesub1(z_np, t_original, 0)
+
+        # Recover temperature using both backends
+        t_jax = float(jax_proc._tesub2(z_jax, 50.0, h, 0))
+        t_py = py_proc._tesub2(z_np, 50.0, h, 0)
+
+        assert abs(t_jax - t_py) < 0.1, f"Mismatch: JAX={t_jax}, Python={t_py}"
+
+
 class TestAPICompatibility:
     """Test API compatibility with PythonTEProcess."""
 

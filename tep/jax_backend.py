@@ -696,9 +696,28 @@ class JaxTEProcess:
         float
             Specific enthalpy.
         """
-        # TODO: Implement with jnp operations
-        # Will use jnp.where instead of if/else for JIT compatibility
-        raise NotImplementedError("_tesub1 not yet implemented")
+        const = self._const
+
+        # Liquid enthalpy calculation (vectorized)
+        hi_liquid = t * (const.ah + const.bh * t / 2.0 + const.ch * t**2 / 3.0)
+        hi_liquid = 1.8 * hi_liquid
+        h_liquid = jnp.sum(z * const.xmw * hi_liquid)
+
+        # Gas enthalpy calculation (vectorized)
+        hi_gas = t * (const.ag + const.bg * t / 2.0 + const.cg * t**2 / 3.0)
+        hi_gas = 1.8 * hi_gas + const.av
+        h_gas = jnp.sum(z * const.xmw * hi_gas)
+
+        # Select liquid or gas based on ity
+        # ity == 0 -> liquid, ity >= 1 -> gas
+        h = jnp.where(ity == 0, h_liquid, h_gas)
+
+        # Apply pressure correction for ity == 2 (compressor)
+        r = 3.57696e-6
+        correction = r * (t + 273.15)
+        h = jnp.where(ity == 2, h - correction, h)
+
+        return h
 
     def _tesub2(
         self,
@@ -727,8 +746,37 @@ class JaxTEProcess:
         float
             Temperature (deg C).
         """
-        # TODO: Implement with lax.while_loop for JIT compatibility
-        raise NotImplementedError("_tesub2 not yet implemented")
+        # Newton iteration using lax.while_loop for JIT compatibility
+
+        def newton_cond(carry):
+            """Condition: continue while |dt| >= tolerance and iteration < max."""
+            t, dt, iteration = carry
+            return (jnp.abs(dt) >= 1.0e-12) & (iteration < 100)
+
+        def newton_body(carry):
+            """One Newton iteration step."""
+            t, _, iteration = carry
+            htest = self._tesub1(z, t, ity)
+            err = htest - h
+            dh = self._tesub3(z, t, ity)
+            # Guard against zero derivative
+            dt = jnp.where(jnp.abs(dh) > 1e-20, -err / dh, 0.0)
+            new_t = t + dt
+            return (new_t, dt, iteration + 1)
+
+        # Initial carry: (temperature, dt, iteration_count)
+        # Start with dt=1.0 to ensure loop runs at least once
+        initial_carry = (t_init, 1.0, 0)
+
+        # Run Newton iteration
+        final_t, final_dt, final_iter = lax.while_loop(
+            newton_cond,
+            newton_body,
+            initial_carry
+        )
+
+        # Return final temperature (or initial if didn't converge)
+        return jnp.where(final_iter >= 100, t_init, final_t)
 
     def _tesub3(
         self,
@@ -752,8 +800,26 @@ class JaxTEProcess:
         float
             dH/dT.
         """
-        # TODO: Implement with jnp operations
-        raise NotImplementedError("_tesub3 not yet implemented")
+        const = self._const
+
+        # Liquid dH/dT (vectorized)
+        dhi_liquid = const.ah + const.bh * t + const.ch * t**2
+        dhi_liquid = 1.8 * dhi_liquid
+        dh_liquid = jnp.sum(z * const.xmw * dhi_liquid)
+
+        # Gas dH/dT (vectorized)
+        dhi_gas = const.ag + const.bg * t + const.cg * t**2
+        dhi_gas = 1.8 * dhi_gas
+        dh_gas = jnp.sum(z * const.xmw * dhi_gas)
+
+        # Select liquid or gas based on ity
+        dh = jnp.where(ity == 0, dh_liquid, dh_gas)
+
+        # Apply pressure correction for ity == 2
+        r = 3.57696e-6
+        dh = jnp.where(ity == 2, dh - r, dh)
+
+        return dh
 
     def _tesub4(
         self,
@@ -774,8 +840,15 @@ class JaxTEProcess:
         float
             Liquid density (kmol/m^3).
         """
-        # TODO: Implement with jnp operations
-        raise NotImplementedError("_tesub4 not yet implemented")
+        const = self._const
+
+        # Calculate molar volume (vectorized)
+        # v = sum(x_i * M_i / rho_i) where rho_i = ad + bd*t + cd*t^2
+        rho_components = const.ad + (const.bd + const.cd * t) * t
+        v = jnp.sum(x * const.xmw / rho_components)
+
+        # Return density = 1/v, with guard against division by zero
+        return jnp.where(v > 0, 1.0 / v, 1.0)
 
     # =========================================================================
     # Random Number Functions (JAX-based)
