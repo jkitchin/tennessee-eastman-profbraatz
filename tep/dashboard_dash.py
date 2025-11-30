@@ -129,6 +129,10 @@ def get_shutdown_reason(meas):
     reasons = []
     limits = SAFETY_LIMITS
 
+    # Check for NaN/Inf (numerical instability)
+    if not np.all(np.isfinite(meas)):
+        return "Numerical instability detected"
+
     # Check each safety limit
     if meas[6] > limits.reactor_pressure_max:
         reasons.append(f"Reactor pressure ({meas[6]:.0f} kPa) exceeded {limits.reactor_pressure_max:.0f} kPa limit")
@@ -136,29 +140,35 @@ def get_shutdown_reason(meas):
     if meas[8] > limits.reactor_temp_max:
         reasons.append(f"Reactor temperature ({meas[8]:.1f}°C) exceeded {limits.reactor_temp_max:.1f}°C limit")
 
-    # Note: Level measurements are in % but internal check uses volume
-    # These are approximate checks based on typical operating ranges
+    # Level checks - reactor level (XMEAS 8, index 7)
+    # The simulator checks volume: vlr/35.3145 > 24 or < 2 (in m³)
+    # XMEAS(8) is reactor level in % (0-100 scale)
     reactor_level = meas[7]
-    if reactor_level > 95:  # High reactor level warning
+    if reactor_level > 100:
         reasons.append(f"Reactor level ({reactor_level:.1f}%) too high")
-    if reactor_level < 5:  # Low reactor level warning
+    if reactor_level < 10:
         reasons.append(f"Reactor level ({reactor_level:.1f}%) too low")
 
+    # Separator level (XMEAS 12, index 11)
     sep_level = meas[11]
-    if sep_level > 95:
+    if sep_level > 100:
         reasons.append(f"Separator level ({sep_level:.1f}%) too high")
-    if sep_level < 5:
+    if sep_level < 10:
         reasons.append(f"Separator level ({sep_level:.1f}%) too low")
 
+    # Stripper level (XMEAS 15, index 14)
     stripper_level = meas[14]
-    if stripper_level > 95:
+    if stripper_level > 100:
         reasons.append(f"Stripper level ({stripper_level:.1f}%) too high")
-    if stripper_level < 5:
+    if stripper_level < 10:
         reasons.append(f"Stripper level ({stripper_level:.1f}%) too low")
 
     if reasons:
         return " | ".join(reasons)
-    return "Safety limit violation (unknown)"
+
+    # If we get here, shutdown was triggered but we couldn't identify why
+    # This can happen due to timing between when shutdown is detected and when we read measurements
+    return "Process unstable - safety shutdown triggered"
 
 
 def create_layout():

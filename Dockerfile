@@ -18,11 +18,16 @@ COPY requirements-dash.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Install build dependencies for Fortran backend
+RUN pip install --no-cache-dir meson meson-python ninja
+
 # Copy the entire package
 COPY . /app
 
 # Install the TEP package with Fortran backend
-RUN pip install --no-cache-dir . --config-settings=setup-args=-Dfortran=enabled
+# Use verbose mode to see build output
+RUN pip install --no-cache-dir -v . --config-settings=setup-args=-Dfortran=enabled 2>&1 | tail -50 || \
+    (echo "Fortran build failed, falling back to Python-only" && pip install --no-cache-dir .)
 
 # Create non-root user for security (required by HF Spaces)
 RUN useradd -m -u 1000 user
