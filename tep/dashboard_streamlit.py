@@ -344,6 +344,15 @@ def run_simulation_step():
         simulator._debug_yy_id = id(proc.yy)
     idv_id_changed = id(proc._idv) != simulator._debug_idv_id
     yy_id_changed = id(proc.yy) != simulator._debug_yy_id
+
+    # Track actual yy values between fragment runs
+    yy_sum_now = np.sum(proc.yy[:10])
+    prev_yy_sum = getattr(simulator, '_debug_prev_yy_sum', None)
+    if prev_yy_sum is not None:
+        yy_diff = yy_sum_now - prev_yy_sum
+        logger.info(f"FRAGMENT_START: yy_sum={yy_sum_now:.4f}, prev_end={prev_yy_sum:.4f}, diff={yy_diff:.4f}")
+    else:
+        logger.info(f"FRAGMENT_START: yy_sum={yy_sum_now:.4f} (first call)")
     logger.info(f"SIM_ID={id(simulator)}, yy_ID={id(proc.yy)}, yy_changed={yy_id_changed}")
 
     # Get parameters from session state
@@ -429,7 +438,11 @@ def run_simulation_step():
 
     if 7 in disturbances:
         meas_end = simulator.get_measurements()
-        logger.info(f"  Batch end: step={simulator.step_count}, P={meas_end[6]:.1f}kPa")
+        yy_sum_end = np.sum(simulator.process.yy[:10])
+        logger.info(f"  Batch end: step={simulator.step_count}, P={meas_end[6]:.1f}kPa, yy_sum={yy_sum_end:.2f}")
+
+    # Save yy_sum at end of this fragment for comparison at next fragment start
+    simulator._debug_prev_yy_sum = np.sum(simulator.process.yy[:10])
 
     # Record data at specified interval
     current_time_sec = simulator.time * 3600
