@@ -41,6 +41,12 @@ References:
     Detection and Diagnosis in Chemical Processes, Springer-Verlag, London, 2000.
 """
 
+# Force JAX to use CPU backend BEFORE any JAX imports
+# Apple Metal GPU support is experimental and incomplete
+import os
+if 'JAX_PLATFORMS' not in os.environ:
+    os.environ['JAX_PLATFORMS'] = 'cpu'
+
 from .simulator import TEPSimulator, ControlMode
 from .python_backend import PythonTEProcess
 from .controllers import PIController, DecentralizedController, ManualController

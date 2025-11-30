@@ -1900,6 +1900,9 @@ class JaxTEProcessWrapper:
         # State will be set during initialize()
         self._state: Optional[TEPState] = None
 
+        # JIT-compiled step function for performance
+        self._step_jit = jax.jit(self._process.step)
+
     def initialize(self):
         """Initialize the process to steady-state conditions."""
         self._state, self._key = self._process.initialize(self._key)
@@ -1911,11 +1914,11 @@ class JaxTEProcessWrapper:
         self.initialize()
 
     def step(self, dt: float = 1.0/3600.0):
-        """Single Euler integration step."""
+        """Single Euler integration step (JIT-compiled for performance)."""
         if not self._initialized:
             raise RuntimeError("Process not initialized. Call initialize() first.")
 
-        self._state, self._key = self._process.step(self._state, self._key, dt)
+        self._state, self._key = self._step_jit(self._state, self._key, dt)
         self.time = float(self._state.time)
 
     @property

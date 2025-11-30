@@ -302,7 +302,7 @@ class TEPSimulator:
 
         Each step:
         1. Executes the controller (if not open loop)
-        2. Integrates the process equations
+        2. Integrates the process equations (using process.step())
         3. Processes all registered fault detectors
 
         Args:
@@ -325,22 +325,17 @@ class TEPSimulator:
                 for i in range(NUM_MANIPULATED_VARS):
                     self.process.set_xmv(i + 1, new_xmv[i])
 
-            # Integrate one step
-            yp = self.process.evaluate(self.time, self.process.state.yy)
-
-            # Check for numerical instability in derivatives
-            if not np.all(np.isfinite(yp)):
-                return False
-
-            self.time += self.dt
-            new_state = self.process.state.yy + yp * self.dt
-
-            # Check for numerical instability in new state
-            if not np.all(np.isfinite(new_state)):
-                return False
-
-            self.process.state.yy = new_state
+            # Use the process's step() method for integration
+            # This allows backends like JAX to use JIT-compiled stepping
+            self.process.step(self.dt)
+            self.time = self.process.time
             self.step_count += 1
+
+            # Check for numerical instability periodically (every 100 steps)
+            # Frequent checks hurt JAX performance due to numpy conversion overhead
+            if self.step_count % 100 == 0:
+                if not np.all(np.isfinite(self.process.state.yy)):
+                    return False
 
             # Process fault detectors
             if self._detectors:
