@@ -45,7 +45,7 @@ from plotly.subplots import make_subplots
 from .simulator import TEPSimulator, ControlMode
 from .constants import (
     NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES, INITIAL_STATES,
-    SAFETY_LIMITS, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES
+    SAFETY_LIMITS, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES, OPERATING_MODES
 )
 from . import get_available_backends, get_default_backend, __version__, is_fortran_available
 
@@ -323,6 +323,19 @@ def create_layout():
                         style={'marginBottom': '10px'}
                     ),
 
+                    # Operating mode selection
+                    html.Label("Operating Mode (G/H Ratio):"),
+                    dcc.RadioItems(
+                        id='operating-mode',
+                        options=[
+                            {'label': f" Mode {m}: {OPERATING_MODES[m].g_h_ratio} ({OPERATING_MODES[m].production})",
+                             'value': m}
+                            for m in sorted(OPERATING_MODES.keys())
+                        ],
+                        value=1,
+                        style={'marginBottom': '10px', 'fontSize': '12px'}
+                    ),
+
                     # Speed control
                     html.Label("Simulation Speed (steps/update):"),
                     dcc.Slider(
@@ -579,8 +592,8 @@ def create_empty_figure():
     fig = make_subplots(
         rows=n_rows, cols=n_cols,
         subplot_titles=[cfg[0] for cfg in PLOT_CONFIGS],
-        vertical_spacing=0.06,
-        horizontal_spacing=0.10,
+        vertical_spacing=0.08,
+        horizontal_spacing=0.12,
         specs=specs
     )
 
@@ -613,7 +626,7 @@ def create_empty_figure():
                 secondary_y=secondary_y if use_dual_y else False
             )
 
-        fig.update_xaxes(title_text="Time (min)", row=row, col=col)
+        fig.update_xaxes(title_text="Time (min)", title_font_size=10, row=row, col=col)
 
     # Create separate legends for each subplot
     legend_configs = {}
@@ -637,6 +650,10 @@ def create_empty_figure():
         template='plotly_white',
         **legend_configs
     )
+
+    # Reduce subplot title font size
+    for annotation in fig.layout.annotations:
+        annotation.font.size = 11
 
     return fig
 
@@ -771,6 +788,21 @@ def clear_disturbances(n_clicks):
 
 
 @app.callback(
+    [Output(f'mv-slider-{i}', 'value') for i in range(NUM_MANIPULATED_VARS)],
+    Input('operating-mode', 'value'),
+    prevent_initial_call=True
+)
+def update_mv_sliders_on_mode_change(operating_mode):
+    """Update MV slider values when operating mode changes."""
+    if operating_mode is None or operating_mode not in OPERATING_MODES:
+        # Return current values (no change)
+        return [INITIAL_STATES[38 + i] for i in range(NUM_MANIPULATED_VARS)]
+
+    mode_config = OPERATING_MODES[operating_mode]
+    return list(mode_config.xmv_setpoints)
+
+
+@app.callback(
     Output('main-plots', 'figure'),
     Output('time-text', 'children'),
     Output('shutdown-alert', 'style'),
@@ -780,10 +812,11 @@ def clear_disturbances(n_clicks):
     Input('interval-component', 'n_intervals'),
     State('sim-state', 'data'),
     State('control-mode', 'value'),
+    State('operating-mode', 'value'),
     *[State(f'mv-slider-{i}', 'value') for i in range(NUM_MANIPULATED_VARS)],
     prevent_initial_call=True
 )
-def update_simulation(n_intervals, state, control_mode, *mv_values):
+def update_simulation(n_intervals, state, control_mode, operating_mode, *mv_values):
     """Run simulation step and update plots."""
     global simulator, sim_data
 
@@ -827,6 +860,12 @@ def update_simulation(n_intervals, state, control_mode, *mv_values):
         if simulator.control_mode != ControlMode.CLOSED_LOOP:
             simulator.control_mode = ControlMode.CLOSED_LOOP
             simulator._init_controller()
+        # Update operating mode if changed (only in closed loop mode)
+        if hasattr(simulator.controller, 'set_mode'):
+            current_mode = getattr(simulator.controller, 'mode', 1)
+            if operating_mode is not None and operating_mode != current_mode:
+                simulator.controller.set_mode(operating_mode)
+                logger.info(f"Operating mode changed to {operating_mode}")
     else:
         if simulator.control_mode != ControlMode.MANUAL:
             simulator.control_mode = ControlMode.MANUAL
@@ -922,8 +961,8 @@ def create_figure_with_data():
     fig = make_subplots(
         rows=n_rows, cols=n_cols,
         subplot_titles=[cfg[0] for cfg in PLOT_CONFIGS],
-        vertical_spacing=0.06,
-        horizontal_spacing=0.10,
+        vertical_spacing=0.08,
+        horizontal_spacing=0.12,
         specs=specs
     )
 
@@ -1045,6 +1084,10 @@ def create_figure_with_data():
         template='plotly_white',
         **legend_configs
     )
+
+    # Reduce subplot title font size
+    for annotation in fig.layout.annotations:
+        annotation.font.size = 11
 
     return fig
 

@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
 
 from .controller_base import BaseController, ControllerRegistry, register_controller
+from .constants import OPERATING_MODES, DEFAULT_OPERATING_MODE
 
 
 class ControllerType(Enum):
@@ -143,8 +144,16 @@ class DecentralizedController(BaseController):
     version = "1.0.0"
     controlled_mvs = list(range(1, 12))  # Controls MVs 1-11
 
-    def __init__(self):
-        """Initialize the decentralized controller."""
+    def __init__(self, mode: int = DEFAULT_OPERATING_MODE):
+        """
+        Initialize the decentralized controller.
+
+        Args:
+            mode: Operating mode (1-6). Default is mode 1 (50/50 G/H, base rate).
+        """
+        # Store operating mode
+        self._mode = mode
+
         # Initialize all controller loops
         self._init_controllers()
 
@@ -160,27 +169,101 @@ class DecentralizedController(BaseController):
         self.purge_flag = 0
 
     def _init_setpoints(self):
-        """Initialize setpoint values from temain_mod.f."""
-        self.setpoints[0] = 3664.0    # D Feed flow
-        self.setpoints[1] = 4509.3    # E Feed flow
-        self.setpoints[2] = 0.25052   # A Feed flow
-        self.setpoints[3] = 9.3477    # A+C Feed flow
-        self.setpoints[4] = 26.902    # Recycle flow
-        self.setpoints[5] = 0.33712   # Purge rate
-        self.setpoints[6] = 50.0      # Separator level
-        self.setpoints[7] = 50.0      # Stripper level
-        self.setpoints[8] = 230.31    # Steam flow
-        self.setpoints[9] = 94.599    # Reactor CW outlet temp
-        self.setpoints[10] = 22.949   # Stripper underflow
-        self.setpoints[11] = 2633.7   # Separator pressure
-        self.setpoints[12] = 32.188   # Reactor feed A composition
-        self.setpoints[13] = 6.8820   # Reactor feed D composition
-        self.setpoints[14] = 18.776   # Reactor feed E composition
-        self.setpoints[15] = 65.731   # Stripper temperature
-        self.setpoints[16] = 75.000   # Reactor level
-        self.setpoints[17] = 120.40   # Reactor temperature
-        self.setpoints[18] = 13.823   # Purge B composition
-        self.setpoints[19] = 0.83570  # Product E composition
+        """Initialize setpoint values based on operating mode."""
+        # Get mode configuration
+        mode_config = OPERATING_MODES.get(self._mode)
+
+        if mode_config is not None:
+            # Use optimal setpoints from Ricker (1995)
+            sp = mode_config.xmeas_setpoints
+            self.setpoints[0] = sp.get(1, 3664.0)     # D Feed flow (XMEAS 2)
+            self.setpoints[1] = sp.get(2, 4509.3)     # E Feed flow (XMEAS 3)
+            self.setpoints[2] = sp.get(0, 0.25052)    # A Feed flow (XMEAS 1)
+            self.setpoints[3] = sp.get(3, 9.3477)     # A+C Feed flow (XMEAS 4)
+            self.setpoints[4] = 26.902                 # Recycle flow (not in mode spec)
+            self.setpoints[5] = sp.get(9, 0.33712)    # Purge rate (XMEAS 10)
+            self.setpoints[6] = sp.get(11, 50.0)      # Separator level (XMEAS 12)
+            self.setpoints[7] = sp.get(14, 50.0)      # Stripper level (XMEAS 15)
+            self.setpoints[8] = 230.31                 # Steam flow (varies by mode, keep default)
+            self.setpoints[9] = 94.599                 # Reactor CW outlet temp
+            self.setpoints[10] = 22.949                # Stripper underflow
+            self.setpoints[11] = 2633.7                # Separator pressure
+            self.setpoints[12] = 32.188                # Reactor feed A composition
+            self.setpoints[13] = 6.8820                # Reactor feed D composition
+            self.setpoints[14] = 18.776                # Reactor feed E composition
+            self.setpoints[15] = sp.get(17, 65.731)   # Stripper temperature (XMEAS 18)
+            self.setpoints[16] = sp.get(7, 75.000)    # Reactor level (XMEAS 8)
+            self.setpoints[17] = sp.get(8, 120.40)    # Reactor temperature (XMEAS 9)
+            self.setpoints[18] = 13.823                # Purge B composition
+            self.setpoints[19] = 0.83570               # Product E composition
+        else:
+            # Default setpoints (Downs & Vogel base case)
+            self.setpoints[0] = 3664.0    # D Feed flow
+            self.setpoints[1] = 4509.3    # E Feed flow
+            self.setpoints[2] = 0.25052   # A Feed flow
+            self.setpoints[3] = 9.3477    # A+C Feed flow
+            self.setpoints[4] = 26.902    # Recycle flow
+            self.setpoints[5] = 0.33712   # Purge rate
+            self.setpoints[6] = 50.0      # Separator level
+            self.setpoints[7] = 50.0      # Stripper level
+            self.setpoints[8] = 230.31    # Steam flow
+            self.setpoints[9] = 94.599    # Reactor CW outlet temp
+            self.setpoints[10] = 22.949   # Stripper underflow
+            self.setpoints[11] = 2633.7   # Separator pressure
+            self.setpoints[12] = 32.188   # Reactor feed A composition
+            self.setpoints[13] = 6.8820   # Reactor feed D composition
+            self.setpoints[14] = 18.776   # Reactor feed E composition
+            self.setpoints[15] = 65.731   # Stripper temperature
+            self.setpoints[16] = 75.000   # Reactor level
+            self.setpoints[17] = 120.40   # Reactor temperature
+            self.setpoints[18] = 13.823   # Purge B composition
+            self.setpoints[19] = 0.83570  # Product E composition
+
+    @property
+    def mode(self) -> int:
+        """Get current operating mode."""
+        return self._mode
+
+    def set_mode(self, mode: int):
+        """
+        Change the operating mode.
+
+        This updates the controller setpoints to match the new mode.
+        The process will transition to the new operating point over time.
+
+        Args:
+            mode: Operating mode (1-6)
+                1: 50/50 G/H, Base Rate
+                2: 10/90 G/H, Base Rate
+                3: 90/10 G/H, Base Rate
+                4: 50/50 G/H, Max Rate
+                5: 10/90 G/H, Max Rate
+                6: 90/10 G/H, Max Rate
+        """
+        if mode not in OPERATING_MODES:
+            raise ValueError(f"Invalid mode {mode}. Must be 1-6.")
+
+        self._mode = mode
+        self._init_setpoints()
+
+        # Reset controller error states for smooth transition
+        for ctrl in [self.ctrl1, self.ctrl2, self.ctrl3, self.ctrl4, self.ctrl5,
+                     self.ctrl6, self.ctrl7, self.ctrl8, self.ctrl9, self.ctrl10,
+                     self.ctrl11, self.ctrl13, self.ctrl14, self.ctrl15, self.ctrl16,
+                     self.ctrl17, self.ctrl18, self.ctrl19, self.ctrl20, self.ctrl22]:
+            ctrl.err_old = 0.0
+
+    def get_mode_info(self) -> dict:
+        """Get information about the current operating mode."""
+        mode_config = OPERATING_MODES.get(self._mode)
+        if mode_config:
+            return {
+                "mode": self._mode,
+                "name": mode_config.name,
+                "g_h_ratio": mode_config.g_h_ratio,
+                "production": mode_config.production,
+            }
+        return {"mode": self._mode, "name": "Unknown"}
 
     def _init_controllers(self):
         """Initialize all PI controllers."""
@@ -459,6 +542,8 @@ class DecentralizedController(BaseController):
     def get_parameters(self) -> Dict[str, Any]:
         """Get controller parameters."""
         return {
+            "mode": self._mode,
+            "mode_info": self.get_mode_info(),
             "setpoints": self.setpoints.copy(),
             "purge_flag": self.purge_flag,
         }

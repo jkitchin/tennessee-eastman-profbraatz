@@ -3,7 +3,7 @@
 
 .PHONY: help install install-dev install-web test test-verbose test-coverage \
         lint format dashboard run-example clean clean-pyc clean-build \
-        docs build publish backend-info backend-test hf-upload
+        docs build publish backend-info backend-test hf-upload install-skill
 
 # Default target
 help:
@@ -43,6 +43,9 @@ help:
 	@echo "    fortran-build  Compile original Fortran code as standalone"
 	@echo "    fortran-run    Build and run standalone Fortran simulation"
 	@echo "    fortran-clean  Clean Fortran build artifacts"
+	@echo ""
+	@echo "  Claude Code:"
+	@echo "    install-skill  Install TEP skill to .claude/skills/"
 	@echo ""
 
 # ============================================================================
@@ -287,3 +290,19 @@ backend-test:
 hf-upload:
 	@echo "Uploading to Hugging Face Spaces..."
 	hf upload jkitchin/tennessee-eastman-process . --repo-type=space --commit-message "update"
+
+# ============================================================================
+# Claude Code skill targets
+# ============================================================================
+
+install-skill:
+	@echo "Installing TEP Claude Code skill..."
+	@mkdir -p .claude/skills
+	@rm -rf .claude/skills/TEP
+	@cp -r skillz/TEP .claude/skills/
+	@echo "Installed skill to .claude/skills/TEP"
+	@echo ""
+	@echo "Files installed:"
+	@ls -la .claude/skills/TEP/
+	@echo ""
+	@echo "Claude Code will automatically discover this skill when working in this project."

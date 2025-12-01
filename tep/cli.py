@@ -350,7 +350,8 @@ def run_simulation(
     quiet: bool = False,
     plot: bool = False,
     plot_save: Optional[str] = None,
-    controller: Optional[str] = None
+    controller: Optional[str] = None,
+    mode: int = 1
 ) -> int:
     """
     Run a batch simulation and save results.
@@ -368,6 +369,7 @@ def run_simulation(
         plot: Display results graphically
         plot_save: Save plot to file path instead of displaying
         controller: Name of controller plugin to use (default: decentralized)
+        mode: Operating mode 1-6 (default: 1 = 50/50 G/H, base rate)
 
     Returns:
         Exit code (0 = success)
@@ -380,6 +382,13 @@ def run_simulation(
 
         for fault_id, start_time in zip(faults, fault_times):
             disturbances[fault_id] = (start_time, 1)
+
+    # Validate mode
+    from .constants import OPERATING_MODES
+    if mode not in OPERATING_MODES:
+        print(f"Error: Invalid mode {mode}. Must be 1-6.", file=sys.stderr)
+        return 1
+    mode_info = OPERATING_MODES[mode]
 
     # Create controller if specified
     controller_instance = None
@@ -401,12 +410,17 @@ def run_simulation(
     if controller_instance is not None:
         sim.controller = controller_instance
 
+    # Set operating mode on the controller
+    if hasattr(sim.controller, 'set_mode'):
+        sim.controller.set_mode(mode)
+
     if not quiet:
         print(f"Tennessee Eastman Process Simulation")
         print(f"=" * 40)
         print(f"Duration: {duration_hours} hours")
         print(f"Random seed: {seed}")
         print(f"Controller: {controller_name}")
+        print(f"Operating mode: {mode} ({mode_info.g_h_ratio} G/H, {mode_info.production})")
         print(f"Record interval: {record_interval} steps ({record_interval} seconds)")
         if faults:
             print(f"Faults: {faults}")
@@ -587,6 +601,14 @@ Examples:
     )
 
     parser.add_argument(
+        '--mode',
+        type=int,
+        default=1,
+        choices=[1, 2, 3, 4, 5, 6],
+        help='Operating mode 1-6 (default: 1). Modes: 1=50/50 base, 2=10/90 base, 3=90/10 base, 4=50/50 max, 5=10/90 max, 6=90/10 max'
+    )
+
+    parser.add_argument(
         '--plot', '-p',
         action='store_true',
         help='Display results graphically (requires matplotlib)'
@@ -637,7 +659,8 @@ Examples:
             quiet=args.quiet,
             plot=args.plot,
             plot_save=args.plot_save,
-            controller=args.controller
+            controller=args.controller,
+            mode=args.mode
         )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

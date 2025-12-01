@@ -372,3 +372,182 @@ SAFETY_LIMITS = SafetyLimits()
 # Default Random Seed
 # =============================================================================
 DEFAULT_RANDOM_SEED = 4651207995
+
+# =============================================================================
+# Operating Modes
+# =============================================================================
+# The TEP has 6 operating modes defined by G/H product ratio and production rate
+# Data from Ricker (1995) "Optimal Steady-state Operation of the Tennessee
+# Eastman Challenge Process", Computers & Chemical Engineering, 19(9), 949-959.
+# Available at: https://depts.washington.edu/control/LARRY/TE/download.html
+#
+# Mode 1: G/H = 50/50, Base production rate
+# Mode 2: G/H = 10/90, Base production rate
+# Mode 3: G/H = 90/10, Base production rate
+# Mode 4: G/H = 50/50, Maximum production rate
+# Mode 5: G/H = 10/90, Maximum production rate
+# Mode 6: G/H = 90/10, Maximum production rate
+
+@dataclass
+class OperatingMode:
+    """Operating mode specification with setpoints."""
+    name: str
+    g_h_ratio: str  # e.g., "50/50"
+    production: str  # "base" or "max"
+    # Key measurement setpoints (XMEAS indices, 0-based)
+    xmeas_setpoints: dict  # {index: value}
+    # Manipulated variable positions (XMV indices, 0-based)
+    xmv_setpoints: np.ndarray  # 12 values, 0-100%
+
+
+# Operating mode setpoints from Ricker (1995) optimal steady states
+# Note: Mode numbering follows Ricker's convention
+OPERATING_MODES = {
+    1: OperatingMode(
+        name="Mode 1: 50/50 G/H, Base Rate",
+        g_h_ratio="50/50",
+        production="base",
+        xmeas_setpoints={
+            0: 0.267,    # A Feed (kscmh)
+            1: 3657.0,   # D Feed (kg/h)
+            2: 4440.0,   # E Feed (kg/h)
+            3: 9.24,     # A+C Feed (kscmh)
+            6: 2800.0,   # Reactor Pressure (kPa)
+            7: 65.0,     # Reactor Level (%)
+            8: 122.9,    # Reactor Temp (C)
+            9: 0.211,    # Purge Rate (kscmh)
+            11: 50.0,    # Separator Level (%)
+            14: 50.0,    # Stripper Level (%)
+            17: 66.5,    # Stripper Temp (C)
+            39: 53.83,   # Product G (mol%)
+            40: 43.91,   # Product H (mol%)
+        },
+        xmv_setpoints=np.array([
+            62.935, 53.147, 26.248, 60.566, 1.000, 25.770,
+            37.266, 46.444, 1.000, 35.992, 12.431, 100.000
+        ])
+    ),
+    2: OperatingMode(
+        name="Mode 2: 10/90 G/H, Base Rate",
+        g_h_ratio="10/90",
+        production="base",
+        xmeas_setpoints={
+            0: 0.309,    # A Feed (kscmh)
+            1: 734.0,    # D Feed (kg/h)
+            2: 8038.0,   # E Feed (kg/h)
+            3: 8.55,     # A+C Feed (kscmh)
+            6: 2800.0,   # Reactor Pressure (kPa)
+            7: 65.0,     # Reactor Level (%)
+            8: 124.2,    # Reactor Temp (C)
+            9: 0.361,    # Purge Rate (kscmh)
+            11: 50.0,    # Separator Level (%)
+            14: 50.0,    # Stripper Level (%)
+            17: 65.4,    # Stripper Temp (C)
+            39: 11.66,   # Product G (mol%)
+            40: 85.64,   # Product H (mol%)
+        },
+        xmv_setpoints=np.array([
+            12.637, 96.216, 30.412, 56.092, 1.000, 44.347,
+            35.799, 42.865, 1.000, 25.257, 12.907, 100.000
+        ])
+    ),
+    3: OperatingMode(
+        name="Mode 3: 90/10 G/H, Base Rate",
+        g_h_ratio="90/10",
+        production="base",
+        xmeas_setpoints={
+            0: 0.194,    # A Feed (kscmh)
+            1: 5179.0,   # D Feed (kg/h)
+            2: 700.0,    # E Feed (kg/h)
+            3: 7.83,     # A+C Feed (kscmh)
+            6: 2800.0,   # Reactor Pressure (kPa)
+            7: 65.0,     # Reactor Level (%)
+            8: 121.9,    # Reactor Temp (C)
+            9: 0.087,    # Purge Rate (kscmh)
+            11: 50.0,    # Separator Level (%)
+            14: 50.0,    # Stripper Level (%)
+            17: 62.3,    # Stripper Temp (C)
+            39: 90.09,   # Product G (mol%)
+            40: 8.17,    # Product H (mol%)
+        },
+        xmv_setpoints=np.array([
+            89.130, 8.381, 19.114, 51.368, 77.621, 9.501,
+            29.146, 39.425, 1.000, 35.550, 99.000, 100.000
+        ])
+    ),
+    4: OperatingMode(
+        name="Mode 4: 50/50 G/H, Max Rate",
+        g_h_ratio="50/50",
+        production="max",
+        xmeas_setpoints={
+            0: 0.503,    # A Feed (kscmh)
+            1: 5811.0,   # D Feed (kg/h)
+            2: 7244.0,   # E Feed (kg/h)
+            3: 14.73,    # A+C Feed (kscmh)
+            6: 2800.0,   # Reactor Pressure (kPa)
+            7: 65.0,     # Reactor Level (%)
+            8: 128.2,    # Reactor Temp (C)
+            9: 0.462,    # Purge Rate (kscmh)
+            11: 50.0,    # Separator Level (%)
+            14: 50.0,    # Stripper Level (%)
+            17: 51.5,    # Stripper Temp (C)
+            39: 53.35,   # Product G (mol%)
+            40: 43.52,   # Product H (mol%)
+        },
+        xmv_setpoints=np.array([
+            100.000, 86.715, 49.477, 96.595, 1.000, 48.742,
+            60.960, 74.522, 1.000, 60.794, 35.534, 100.000
+        ])
+    ),
+    5: OperatingMode(
+        name="Mode 5: 10/90 G/H, Max Rate",
+        g_h_ratio="10/90",
+        production="max",
+        xmeas_setpoints={
+            0: 0.325,    # A Feed (kscmh)
+            1: 761.0,    # D Feed (kg/h)
+            2: 8354.0,   # E Feed (kg/h)
+            3: 8.87,     # A+C Feed (kscmh)
+            6: 2800.0,   # Reactor Pressure (kPa)
+            7: 65.0,     # Reactor Level (%)
+            8: 124.6,    # Reactor Temp (C)
+            9: 0.384,    # Purge Rate (kscmh)
+            11: 50.0,    # Separator Level (%)
+            14: 50.0,    # Stripper Level (%)
+            17: 63.9,    # Stripper Temp (C)
+            39: 11.65,   # Product G (mol%)
+            40: 85.53,   # Product H (mol%)
+        },
+        xmv_setpoints=np.array([
+            13.098, 100.000, 32.009, 58.155, 1.000, 47.095,
+            37.422, 44.491, 1.000, 26.070, 14.115, 100.000
+        ])
+    ),
+    6: OperatingMode(
+        name="Mode 6: 90/10 G/H, Max Rate",
+        g_h_ratio="90/10",
+        production="max",
+        xmeas_setpoints={
+            0: 0.219,    # A Feed (kscmh)
+            1: 5811.0,   # D Feed (kg/h)
+            2: 788.0,    # E Feed (kg/h)
+            3: 8.79,     # A+C Feed (kscmh)
+            6: 2800.0,   # Reactor Pressure (kPa)
+            7: 65.0,     # Reactor Level (%)
+            8: 123.0,    # Reactor Temp (C)
+            9: 0.099,    # Purge Rate (kscmh)
+            11: 50.0,    # Separator Level (%)
+            14: 50.0,    # Stripper Level (%)
+            17: 60.5,    # Stripper Temp (C)
+            39: 90.07,   # Product G (mol%)
+            40: 8.16,    # Product H (mol%)
+        },
+        xmv_setpoints=np.array([
+            100.000, 9.438, 21.543, 57.640, 71.166, 10.654,
+            32.685, 44.251, 1.000, 40.538, 99.000, 100.000
+        ])
+    ),
+}
+
+# Default operating mode (Downs & Vogel base case)
+DEFAULT_OPERATING_MODE = 1
