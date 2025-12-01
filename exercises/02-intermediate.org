@@ -1,0 +1,446 @@
+#+TITLE: Tennessee Eastman Process - Intermediate Exercises
+#+AUTHOR: TEP Python Package
+#+OPTIONS: toc:t
+
+* Introduction
+
+These intermediate exercises build on the beginner exercises to explore fault
+detection methods, statistical analysis, and the detector framework. You should
+be comfortable with basic TEP simulation before attempting these exercises.
+
+* Exercise 7: Statistical Analysis of Normal Operation
+
+** Objective
+Characterize normal operation using statistical methods.
+
+** Tasks
+
+1. Generate a dataset of normal operation
+2. Calculate mean, standard deviation, and correlations
+3. Identify which variables are most correlated
+4. Establish baseline statistics for fault detection
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from tep import TEPSimulator
+from tep.constants import XMEAS_NAMES
+
+# Generate normal operation data
+sim = TEPSimulator()
+sim.initialize()
+result = sim.simulate(duration_hours=8.0)
+
+# Extract measurements (skip first 30 min for initial transients)
+data = result.measurements[1800:, :]  # Skip 30 min warmup
+
+# TODO: Calculate mean and std for each variable
+means = np.mean(data, axis=0)
+stds = np.std(data, axis=0)
+
+# TODO: Calculate correlation matrix
+corr_matrix = np.corrcoef(data.T)
+
+# TODO: Find highly correlated variable pairs (|r| > 0.8)
+for i in range(41):
+    for j in range(i+1, 41):
+        if abs(corr_matrix[i, j]) > 0.8:
+            print(f"{XMEAS_NAMES[i]} <-> {XMEAS_NAMES[j]}: r = {corr_matrix[i, j]:.3f}")
+
+# TODO: Plot a heatmap of the correlation matrix
+#+end_src
+
+** Questions to Answer
+
+1. Which variables have the highest variability (coefficient of variation)?
+2. What physical relationships explain the strong correlations?
+3. How could you use these statistics for fault detection?
+
+* Exercise 8: Threshold-Based Fault Detection
+
+** Objective
+Implement a simple threshold-based fault detector from scratch.
+
+** Tasks
+
+1. Establish control limits from normal operation data
+2. Apply the detector to faulty data
+3. Calculate detection metrics (detection rate, false alarm rate)
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from tep import TEPSimulator
+
+# Generate normal operation data for training
+sim = TEPSimulator()
+sim.initialize()
+normal_result = sim.simulate(duration_hours=4.0)
+normal_data = normal_result.measurements[1800:, :]
+
+# Calculate control limits (mean +/- 3*sigma)
+means = np.mean(normal_data, axis=0)
+stds = np.std(normal_data, axis=0)
+upper_limits = means + 3 * stds
+lower_limits = means - 3 * stds
+
+# Generate faulty data
+sim.initialize()
+fault_result = sim.simulate(
+    duration_hours=4.0,
+    disturbances={1: (1.0, 1)}  # IDV(1) starts at 1 hour
+)
+fault_data = fault_result.measurements
+
+# TODO: Implement detection logic
+def detect_fault(measurement, lower, upper):
+    """Return True if any variable exceeds limits."""
+    # Your code here
+    pass
+
+# TODO: Apply detector to fault data
+detections = []
+for i, measurement in enumerate(fault_data):
+    detected = detect_fault(measurement, lower_limits, upper_limits)
+    detections.append(detected)
+
+# TODO: Calculate metrics
+# - False alarm rate (detections before fault at t=3600)
+# - Detection rate (detections after fault onset)
+# - Detection delay (first detection after fault)
+#+end_src
+
+** Questions to Answer
+
+1. What is the false alarm rate during normal operation?
+2. How quickly is IDV(1) detected after onset?
+3. Which variables trigger the detection?
+
+* Exercise 9: Using the Built-in Detector Framework
+
+** Objective
+Learn to use the TEP package's fault detection framework.
+
+** Tasks
+
+1. Create and configure different detector types
+2. Run simulations with detectors attached
+3. Compare detector performance
+
+** Starter Code
+
+#+begin_src python
+from tep import TEPSimulator, FaultDetectorRegistry
+
+# List available detectors
+print("Available detectors:", FaultDetectorRegistry.list_available())
+
+# Create detectors
+threshold_detector = FaultDetectorRegistry.create("threshold")
+ewma_detector = FaultDetectorRegistry.create("ewma", alpha=0.1, threshold=3.0)
+pca_detector = FaultDetectorRegistry.create("pca", window_size=200)
+
+# Run simulation with threshold detector
+sim = TEPSimulator()
+sim.initialize()
+sim.add_detector(threshold_detector)
+sim.set_ground_truth(0)  # Normal initially
+
+# Run normal operation
+for _ in range(3600):  # 1 hour
+    sim.step()
+
+# Introduce fault
+sim.set_disturbance(1, 1)
+sim.set_ground_truth(1)  # Now fault 1 is active
+
+# Run with fault
+for _ in range(3600):  # 1 hour with fault
+    sim.step()
+
+# TODO: Print detection metrics
+print(threshold_detector.metrics)
+
+# TODO: Repeat with EWMA and PCA detectors and compare
+#+end_src
+
+** Questions to Answer
+
+1. Which detector has the lowest false alarm rate?
+2. Which detector detects faults fastest?
+3. What are the trade-offs between different detector types?
+
+* Exercise 10: PCA-Based Monitoring
+
+** Objective
+Understand Principal Component Analysis for process monitoring.
+
+** Tasks
+
+1. Train a PCA model on normal operation data
+2. Compute T² and SPE statistics
+3. Visualize the monitoring statistics over time
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from sklearn.decomposition import PCA
+from tep import TEPSimulator
+import matplotlib.pyplot as plt
+
+# Generate training data (normal operation)
+sim = TEPSimulator()
+sim.initialize()
+train_result = sim.simulate(duration_hours=4.0)
+train_data = train_result.measurements[1800:, :]  # Skip warmup
+
+# Normalize data
+mean = np.mean(train_data, axis=0)
+std = np.std(train_data, axis=0)
+train_normalized = (train_data - mean) / std
+
+# Fit PCA
+n_components = 10
+pca = PCA(n_components=n_components)
+pca.fit(train_normalized)
+
+print(f"Explained variance ratio: {pca.explained_variance_ratio_.sum():.2%}")
+
+# Generate test data with fault
+sim.initialize()
+test_result = sim.simulate(
+    duration_hours=4.0,
+    disturbances={4: (2.0, 1)}  # IDV(4) at t=2h
+)
+test_data = test_result.measurements
+test_normalized = (test_data - mean) / std
+
+# TODO: Calculate T² statistic for test data
+# T² = sum of (score_i / eigenvalue_i)²
+
+# TODO: Calculate SPE (squared prediction error)
+# SPE = ||x - x_reconstructed||²
+
+# TODO: Plot T² and SPE over time with control limits
+# Mark fault onset at t=7200
+#+end_src
+
+** Questions to Answer
+
+1. How many components capture 95% of variance?
+2. Does T² or SPE detect the fault first?
+3. Which statistic shows a larger change after fault onset?
+
+* Exercise 11: Detection Delay Analysis
+
+** Objective
+Analyze detection delays across multiple faults and detectors.
+
+** Tasks
+
+1. Run multiple faults with different detectors
+2. Record detection delays for each combination
+3. Create a summary table of results
+
+** Starter Code
+
+#+begin_src python
+from tep import TEPSimulator, FaultDetectorRegistry
+import numpy as np
+
+# Faults to test
+faults_to_test = [1, 2, 4, 5, 6, 7]
+
+# Detectors to compare
+detector_configs = [
+    ("threshold", {}),
+    ("ewma", {"alpha": 0.1}),
+    ("pca", {"window_size": 200}),
+]
+
+results = {}
+
+for fault_id in faults_to_test:
+    results[fault_id] = {}
+
+    for detector_name, params in detector_configs:
+        # Create fresh detector
+        detector = FaultDetectorRegistry.create(detector_name, **params)
+
+        # Run simulation
+        sim = TEPSimulator()
+        sim.initialize()
+        sim.add_detector(detector)
+        sim.set_ground_truth(0)
+
+        # Normal operation (1 hour)
+        for _ in range(3600):
+            sim.step()
+
+        # Introduce fault
+        sim.set_disturbance(fault_id, 1)
+        sim.set_ground_truth(fault_id)
+        fault_onset = 3600
+
+        # Run with fault, track first detection
+        first_detection = None
+        for step in range(3600, 7200):
+            sim.step()
+            latest = sim.get_latest_detection()
+            if latest.get(detector_name) and latest[detector_name].is_fault:
+                if first_detection is None:
+                    first_detection = step - fault_onset
+                    break
+
+        results[fault_id][detector_name] = first_detection
+
+# TODO: Print results as a table
+# TODO: Calculate average detection delay per detector
+# TODO: Identify which faults are hardest to detect
+#+end_src
+
+** Questions to Answer
+
+1. Which faults have the shortest detection delays?
+2. Which detector performs best overall?
+3. Are there faults that some detectors miss entirely?
+
+* Exercise 12: Composite Detector Design
+
+** Objective
+Create an ensemble detector combining multiple detection methods.
+
+** Tasks
+
+1. Build a composite detector with voting
+2. Tune the voting threshold
+3. Evaluate ensemble vs. individual detectors
+
+** Starter Code
+
+#+begin_src python
+from tep import TEPSimulator, FaultDetectorRegistry
+
+# Create individual detectors
+threshold = FaultDetectorRegistry.create("threshold")
+ewma = FaultDetectorRegistry.create("ewma", alpha=0.05)
+pca = FaultDetectorRegistry.create("pca", window_size=300)
+cusum = FaultDetectorRegistry.create("cusum", k=0.5, h=5.0)
+
+# Create composite with majority voting
+composite = FaultDetectorRegistry.create("composite", min_votes=2)
+composite.add_detector(threshold)
+composite.add_detector(ewma)
+composite.add_detector(pca)
+composite.add_detector(cusum)
+
+# Test on multiple faults
+test_faults = [1, 4, 6, 11]
+
+for fault_id in test_faults:
+    # Reset detectors
+    composite.reset()
+
+    sim = TEPSimulator()
+    sim.initialize()
+    sim.add_detector(composite)
+    sim.set_ground_truth(0)
+
+    # Normal then fault
+    for _ in range(3600):
+        sim.step()
+
+    sim.set_disturbance(fault_id, 1)
+    sim.set_ground_truth(fault_id)
+
+    for _ in range(3600):
+        sim.step()
+
+    # TODO: Compare composite metrics vs individual detector metrics
+    print(f"\nFault IDV({fault_id}):")
+    print(composite.metrics)
+
+# TODO: Experiment with different min_votes values (1, 2, 3, 4)
+# TODO: Find the best trade-off between detection rate and false alarm rate
+#+end_src
+
+** Questions to Answer
+
+1. Does the ensemble outperform individual detectors?
+2. What is the optimal voting threshold?
+3. Which individual detector contributes most to ensemble performance?
+
+* Exercise 13: Handling Unknown Faults (IDV 16-20)
+
+** Objective
+Develop strategies for detecting unknown fault types.
+
+** Tasks
+
+1. Train detectors only on known faults (IDV 1-15)
+2. Test detection of unknown faults (IDV 16-20)
+3. Analyze why some faults are harder to detect
+
+** Starter Code
+
+#+begin_src python
+from tep import TEPSimulator, FaultDetectorRegistry
+from tep.constants import FAULT_DESCRIPTIONS
+
+# Unknown faults
+unknown_faults = [16, 17, 18, 19, 20]
+
+print("Unknown fault descriptions:")
+for f in unknown_faults:
+    print(f"IDV({f}): {FAULT_DESCRIPTIONS[f]}")
+
+# Create detector trained on normal data only
+pca = FaultDetectorRegistry.create("pca", window_size=300, auto_train=False)
+
+# Train on normal operation
+sim = TEPSimulator()
+sim.initialize()
+train_result = sim.simulate(duration_hours=4.0)
+pca.train(train_result.measurements[1800:, :])
+
+# Test on unknown faults
+for fault_id in unknown_faults:
+    pca.reset()
+    pca.reset_metrics()
+
+    sim = TEPSimulator()
+    sim.initialize()
+    sim.add_detector(pca)
+    sim.set_ground_truth(0)
+
+    # Normal operation
+    for _ in range(3600):
+        sim.step()
+
+    # Introduce unknown fault
+    sim.set_disturbance(fault_id, 1)
+    sim.set_ground_truth(fault_id)
+
+    for _ in range(7200):  # Run longer to observe effects
+        sim.step()
+
+    print(f"\nIDV({fault_id}) Detection Results:")
+    print(f"  Detection Rate: {pca.metrics.fault_detection_rate:.2%}")
+    print(f"  False Alarm Rate: {pca.metrics.false_alarm_rate:.2%}")
+
+# TODO: Try different detection approaches for unknown faults
+# TODO: Analyze which monitoring statistics are most sensitive
+#+end_src
+
+** Questions to Answer
+
+1. Which unknown faults are detectable with standard methods?
+2. What makes IDV(16-20) challenging to detect?
+3. How could you improve detection of subtle faults?
+
+* Solutions
+
+Solutions to these exercises are available in the =solutions/= directory.
