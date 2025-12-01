@@ -1,0 +1,677 @@
+#+TITLE: Tennessee Eastman Process - Advanced Exercises
+#+AUTHOR: TEP Python Package
+#+OPTIONS: toc:t
+
+* Introduction
+
+These advanced exercises explore cutting-edge topics in fault detection and
+diagnosis, including deep learning methods, custom detector development,
+multi-fault scenarios, and real-time considerations. Strong Python programming
+skills and familiarity with machine learning concepts are recommended.
+
+* Exercise 14: Building a Custom Fault Detector
+
+** Objective
+Implement a custom fault detector using the plugin framework.
+
+** Tasks
+
+1. Create a detector class inheriting from BaseFaultDetector
+2. Implement the detect() method with custom logic
+3. Register and test the detector
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from tep import TEPSimulator
+from tep.detector_base import (
+    BaseFaultDetector, DetectionResult, register_detector, FaultDetectorRegistry
+)
+
+@register_detector(name="gradient_detector")
+class GradientDetector(BaseFaultDetector):
+    """
+    Detects faults by monitoring rate of change of process variables.
+    Large gradients may indicate sudden disturbances.
+    """
+
+    name = "gradient_detector"
+    description = "Rate of change based fault detection"
+    window_size = 30  # 30 second window
+    detect_interval = 5  # Check every 5 steps
+
+    def __init__(self, gradient_threshold=2.0, **kwargs):
+        super().__init__(**kwargs)
+        self.gradient_threshold = gradient_threshold
+        self._prev_means = None
+
+    def detect(self, xmeas, step):
+        if not self.window_ready:
+            return DetectionResult(-1, 0.0, step)
+
+        window = self.window
+
+        # Calculate current window mean
+        current_mean = np.mean(window, axis=0)
+
+        if self._prev_means is None:
+            self._prev_means = current_mean
+            return DetectionResult(0, 0.8, step)
+
+        # TODO: Calculate normalized gradient
+        # gradient = (current_mean - prev_mean) / std
+
+        # TODO: Find maximum gradient magnitude
+
+        # TODO: Return fault detection if gradient exceeds threshold
+
+        # Update previous means
+        self._prev_means = current_mean.copy()
+
+        return DetectionResult(0, 0.8, step)
+
+    def _reset_impl(self):
+        self._prev_means = None
+
+
+# Test the custom detector
+detector = FaultDetectorRegistry.create("gradient_detector", gradient_threshold=3.0)
+
+sim = TEPSimulator()
+sim.initialize()
+sim.add_detector(detector)
+sim.set_ground_truth(0)
+
+# Normal then step fault
+for _ in range(3600):
+    sim.step()
+
+sim.set_disturbance(4, 1)  # IDV(4) - step change in cooling water temp
+sim.set_ground_truth(4)
+
+for _ in range(3600):
+    sim.step()
+
+print(detector.metrics)
+#+end_src
+
+** Questions to Answer
+
+1. What types of faults is this detector best suited for?
+2. How does window_size affect detection sensitivity?
+3. What improvements could you make to the gradient calculation?
+
+* Exercise 15: LSTM-Based Fault Detection
+
+** Objective
+Implement a deep learning fault detector using LSTM networks.
+
+** Tasks
+
+1. Prepare time-series data for LSTM training
+2. Build and train an LSTM autoencoder
+3. Use reconstruction error for fault detection
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from tep import TEPSimulator
+
+# Check if PyTorch is available
+try:
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    print("PyTorch not installed. Install with: pip install torch")
+
+if TORCH_AVAILABLE:
+
+    class LSTMAutoencoder(nn.Module):
+        """LSTM-based autoencoder for anomaly detection."""
+
+        def __init__(self, input_dim=41, hidden_dim=20, num_layers=2):
+            super().__init__()
+            self.encoder = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
+            self.decoder = nn.LSTM(hidden_dim, hidden_dim, num_layers, batch_first=True)
+            self.output_layer = nn.Linear(hidden_dim, input_dim)
+
+        def forward(self, x):
+            # Encode
+            _, (hidden, cell) = self.encoder(x)
+
+            # Decode (use last hidden state to reconstruct)
+            seq_len = x.size(1)
+            decoder_input = hidden[-1].unsqueeze(1).repeat(1, seq_len, 1)
+            decoder_output, _ = self.decoder(decoder_input)
+
+            # Output
+            reconstruction = self.output_layer(decoder_output)
+            return reconstruction
+
+    # Generate training data (normal operation)
+    sim = TEPSimulator()
+    sim.initialize()
+    result = sim.simulate(duration_hours=8.0)
+    data = result.measurements[1800:, :]  # Skip warmup
+
+    # Normalize
+    mean = np.mean(data, axis=0)
+    std = np.std(data, axis=0)
+    normalized = (data - mean) / std
+
+    # Create sequences
+    seq_length = 50
+
+    def create_sequences(data, seq_length):
+        sequences = []
+        for i in range(len(data) - seq_length):
+            sequences.append(data[i:i+seq_length])
+        return np.array(sequences)
+
+    sequences = create_sequences(normalized, seq_length)
+    print(f"Training sequences shape: {sequences.shape}")
+
+    # TODO: Convert to PyTorch tensors and create DataLoader
+
+    # TODO: Initialize model, optimizer, loss function
+
+    # TODO: Train the autoencoder (minimize reconstruction error)
+
+    # TODO: Generate test data with fault and compute reconstruction errors
+
+    # TODO: Set threshold based on training reconstruction errors
+
+    # TODO: Detect faults where reconstruction error exceeds threshold
+#+end_src
+
+** Questions to Answer
+
+1. What sequence length works best for TEP data?
+2. How do you determine the anomaly threshold?
+3. How does LSTM detection delay compare to statistical methods?
+
+* Exercise 16: Multi-Fault Detection
+
+** Objective
+Develop methods to detect and identify multiple simultaneous faults.
+
+** Tasks
+
+1. Generate data with concurrent faults
+2. Implement multi-label classification
+3. Evaluate detection of fault combinations
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from tep import TEPSimulator
+from tep.constants import FAULT_DESCRIPTIONS
+
+def simulate_multi_fault(fault_ids, onset_times, duration_hours=4.0):
+    """Simulate multiple concurrent faults."""
+    sim = TEPSimulator()
+    sim.initialize()
+
+    # Build disturbance dict with multiple faults
+    disturbances = {}
+    for fault_id, onset in zip(fault_ids, onset_times):
+        disturbances[fault_id] = (onset, 1)  # magnitude 1
+
+    result = sim.simulate(duration_hours=duration_hours, disturbances=disturbances)
+    return result
+
+# Test with two concurrent faults
+result = simulate_multi_fault(
+    fault_ids=[1, 4],       # A/C feed ratio + cooling water temp
+    onset_times=[1.0, 1.5]  # Fault 1 at 1h, Fault 4 at 1.5h
+)
+
+print(f"Simulation with IDV(1) and IDV(4) concurrent")
+print(f"Data shape: {result.measurements.shape}")
+
+# TODO: Train a multi-label classifier
+# - Input: measurement windows
+# - Output: binary vector indicating active faults
+
+# Approach 1: Train separate binary classifiers for each fault
+
+# Approach 2: Train a single multi-output neural network
+
+# TODO: Generate test cases with various fault combinations
+test_combinations = [
+    ([1], [1.0]),           # Single fault
+    ([1, 4], [1.0, 1.0]),   # Two concurrent faults
+    ([1, 2, 6], [1.0, 1.0, 1.0]),  # Three concurrent faults
+]
+
+# TODO: Evaluate multi-fault detection accuracy
+# Metrics:
+# - Exact match ratio (all faults correctly identified)
+# - Hamming loss (proportion of incorrectly predicted labels)
+# - Per-fault recall (how often each fault is detected)
+#+end_src
+
+** Questions to Answer
+
+1. How does detection accuracy change with more concurrent faults?
+2. Are some fault combinations harder to distinguish?
+3. How would you handle unknown combinations at test time?
+
+* Exercise 17: Root Cause Analysis with Contribution Plots
+
+** Objective
+Implement contribution analysis to identify root causes of detected faults.
+
+** Tasks
+
+1. Implement variable contribution calculation for PCA
+2. Create contribution plots for detected faults
+3. Compare contributions across different fault types
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+import matplotlib.pyplot as plt
+from tep import TEPSimulator
+from tep.constants import XMEAS_NAMES
+from sklearn.decomposition import PCA
+
+# Train PCA model
+sim = TEPSimulator()
+sim.initialize()
+train_result = sim.simulate(duration_hours=4.0)
+train_data = train_result.measurements[1800:, :]
+
+mean = np.mean(train_data, axis=0)
+std = np.std(train_data, axis=0)
+train_norm = (train_data - mean) / std
+
+pca = PCA(n_components=10)
+pca.fit(train_norm)
+
+def compute_contributions_t2(x_norm, pca_model):
+    """
+    Compute variable contributions to T² statistic.
+
+    Returns contribution of each variable to the T² value.
+    """
+    scores = pca_model.transform(x_norm.reshape(1, -1))
+    eigenvalues = pca_model.explained_variance_
+
+    # TODO: Implement T² contribution calculation
+    # cont_j = sum_i (score_i * loading_ij / eigenvalue_i)²
+    contributions = np.zeros(41)
+
+    return contributions
+
+def compute_contributions_spe(x_norm, pca_model):
+    """
+    Compute variable contributions to SPE statistic.
+
+    Returns contribution of each variable to the SPE value.
+    """
+    x_reconstructed = pca_model.inverse_transform(
+        pca_model.transform(x_norm.reshape(1, -1))
+    )
+    residuals = x_norm - x_reconstructed.flatten()
+
+    # SPE contributions are simply squared residuals
+    contributions = residuals ** 2
+
+    return contributions
+
+# Test with a fault
+sim.initialize()
+test_result = sim.simulate(
+    duration_hours=3.0,
+    disturbances={4: (1.0, 1)}  # IDV(4) cooling water
+)
+
+# Analyze a sample after fault onset
+fault_sample = test_result.measurements[5000, :]  # Well after fault
+fault_norm = (fault_sample - mean) / std
+
+t2_contrib = compute_contributions_t2(fault_norm, pca)
+spe_contrib = compute_contributions_spe(fault_norm, pca)
+
+# TODO: Create bar plot of contributions
+fig, axes = plt.subplots(2, 1, figsize=(14, 8))
+
+# Plot T² contributions
+axes[0].bar(range(41), t2_contrib)
+axes[0].set_title('T² Variable Contributions - IDV(4)')
+axes[0].set_xlabel('Variable Index')
+
+# Plot SPE contributions
+axes[1].bar(range(41), spe_contrib)
+axes[1].set_title('SPE Variable Contributions - IDV(4)')
+axes[1].set_xlabel('Variable Index')
+
+plt.tight_layout()
+plt.show()
+
+# TODO: Identify top contributing variables
+# TODO: Do they match expected fault signature for IDV(4)?
+#+end_src
+
+** Questions to Answer
+
+1. Which variables contribute most to IDV(4) detection?
+2. Do T² and SPE contributions identify the same variables?
+3. How would you automate root cause identification?
+
+* Exercise 18: Early Warning System Design
+
+** Objective
+Design a system that provides early warning before faults fully develop.
+
+** Tasks
+
+1. Analyze fault propagation patterns
+2. Implement predictive indicators
+3. Optimize detection delay vs. false alarm trade-off
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+from tep import TEPSimulator, FaultDetectorRegistry
+import matplotlib.pyplot as plt
+
+def analyze_fault_propagation(fault_id, n_runs=5):
+    """
+    Analyze how a fault propagates through the process.
+    Returns the average time each variable first shows deviation.
+    """
+    first_deviations = []
+
+    for run in range(n_runs):
+        sim = TEPSimulator()
+        sim.initialize()
+
+        # Get baseline statistics from normal operation
+        normal_result = sim.simulate(duration_hours=1.0)
+        baseline_mean = np.mean(normal_result.measurements[600:, :], axis=0)
+        baseline_std = np.std(normal_result.measurements[600:, :], axis=0)
+
+        # Run with fault
+        sim.initialize()
+        fault_result = sim.simulate(
+            duration_hours=2.0,
+            disturbances={fault_id: (0.5, 1)}  # Fault at 30 min
+        )
+
+        fault_onset_step = 1800  # 30 min
+
+        # Find first deviation for each variable
+        deviation_times = np.full(41, np.nan)
+        threshold = 3.0  # 3-sigma
+
+        for var_idx in range(41):
+            z_scores = np.abs(
+                (fault_result.measurements[:, var_idx] - baseline_mean[var_idx])
+                / (baseline_std[var_idx] + 1e-8)
+            )
+
+            # Find first sustained deviation after fault onset
+            for t in range(fault_onset_step, len(z_scores) - 10):
+                if np.all(z_scores[t:t+10] > threshold):
+                    deviation_times[var_idx] = (t - fault_onset_step)
+                    break
+
+        first_deviations.append(deviation_times)
+
+    return np.nanmean(first_deviations, axis=0)
+
+# Analyze IDV(4) propagation
+propagation = analyze_fault_propagation(4)
+
+# TODO: Identify early warning variables (first to deviate)
+# TODO: Design detector focusing on early warning variables
+# TODO: Compare detection delay with standard detectors
+
+# Create early warning detector focusing on sensitive variables
+early_vars = np.argsort(propagation)[:5]  # 5 earliest variables
+print(f"Early warning variables for IDV(4): {early_vars}")
+print(f"Deviation times: {propagation[early_vars]}")
+
+# TODO: Implement focused monitoring on early warning variables
+# TODO: Evaluate improvement in detection delay
+#+end_src
+
+** Questions to Answer
+
+1. Which variables are leading indicators for each fault?
+2. How much earlier can faults be detected with focused monitoring?
+3. Does focusing on fewer variables increase false alarm rate?
+
+* Exercise 19: Real-Time Performance Optimization
+
+** Objective
+Optimize fault detection for real-time deployment constraints.
+
+** Tasks
+
+1. Profile detection algorithm execution times
+2. Implement efficient incremental updates
+3. Design for edge deployment (limited compute)
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+import time
+from tep import TEPSimulator, FaultDetectorRegistry
+
+def profile_detector(detector_name, params, n_steps=10000):
+    """Profile detector execution time."""
+    detector = FaultDetectorRegistry.create(detector_name, **params)
+
+    sim = TEPSimulator()
+    sim.initialize()
+    sim.add_detector(detector)
+
+    times = []
+    for step in range(n_steps):
+        start = time.perf_counter()
+        sim.step()
+        elapsed = time.perf_counter() - start
+        times.append(elapsed)
+
+    return {
+        'mean_ms': np.mean(times) * 1000,
+        'max_ms': np.max(times) * 1000,
+        'std_ms': np.std(times) * 1000,
+        'percentile_99': np.percentile(times, 99) * 1000,
+    }
+
+# Profile different detectors
+detectors_to_profile = [
+    ("threshold", {}),
+    ("ewma", {"alpha": 0.1}),
+    ("cusum", {}),
+    ("pca", {"window_size": 100}),
+    ("pca", {"window_size": 500}),
+    ("statistical", {"window_size": 120}),
+]
+
+print("Detector Performance Profile")
+print("-" * 60)
+
+for name, params in detectors_to_profile:
+    profile = profile_detector(name, params)
+    window = params.get('window_size', 'N/A')
+    print(f"{name} (window={window}):")
+    print(f"  Mean: {profile['mean_ms']:.3f} ms")
+    print(f"  Max:  {profile['max_ms']:.3f} ms")
+    print(f"  99th: {profile['percentile_99']:.3f} ms")
+    print()
+
+# TODO: Implement incremental PCA update (avoid recomputing on full window)
+
+# TODO: Design lightweight detector suitable for Raspberry Pi
+# - Target: < 10ms per step
+# - Memory: < 100MB
+
+# TODO: Compare accuracy vs. computational cost trade-offs
+#+end_src
+
+** Questions to Answer
+
+1. Which detector has the best accuracy/speed trade-off?
+2. How does window size affect computation time?
+3. What optimizations enable edge deployment?
+
+* Exercise 20: Comprehensive Fault Detection Benchmark
+
+** Objective
+Create a comprehensive benchmark comparing multiple detection approaches.
+
+** Tasks
+
+1. Define standardized evaluation protocol
+2. Test all detectors on all faults
+3. Generate publication-quality results table
+
+** Starter Code
+
+#+begin_src python
+import numpy as np
+import pandas as pd
+from tep import TEPSimulator, FaultDetectorRegistry
+from tep.constants import FAULT_DESCRIPTIONS
+
+def run_benchmark(detector_config, fault_ids, n_runs=3):
+    """
+    Run comprehensive benchmark for a detector configuration.
+
+    Returns DataFrame with metrics for each fault.
+    """
+    results = []
+
+    for fault_id in fault_ids:
+        for run in range(n_runs):
+            # Create fresh detector
+            detector = FaultDetectorRegistry.create(
+                detector_config['name'],
+                **detector_config.get('params', {})
+            )
+
+            sim = TEPSimulator()
+            sim.initialize()
+            sim.add_detector(detector)
+
+            # Phase 1: Normal operation (warmup + baseline)
+            sim.set_ground_truth(0)
+            for _ in range(3600):  # 1 hour
+                sim.step()
+
+            # Phase 2: Faulty operation
+            sim.set_disturbance(fault_id, 1)
+            sim.set_ground_truth(fault_id)
+            fault_onset = 3600
+
+            first_detection = None
+            for step in range(3600, 10800):  # 2 more hours
+                sim.step()
+                latest = sim.get_latest_detection()
+                det_result = latest.get(detector_config['name'])
+                if det_result and det_result.is_fault and first_detection is None:
+                    first_detection = step - fault_onset
+
+            metrics = detector.metrics
+            results.append({
+                'fault_id': fault_id,
+                'run': run,
+                'detector': detector_config['name'],
+                'fdr': metrics.fault_detection_rate,
+                'far': metrics.false_alarm_rate,
+                'accuracy': metrics.accuracy,
+                'detection_delay': first_detection,
+            })
+
+    return pd.DataFrame(results)
+
+# Define detector configurations to benchmark
+detector_configs = [
+    {'name': 'threshold', 'params': {}},
+    {'name': 'ewma', 'params': {'alpha': 0.1, 'threshold': 3.0}},
+    {'name': 'cusum', 'params': {'k': 0.5, 'h': 5.0}},
+    {'name': 'pca', 'params': {'window_size': 200, 'n_components': 10}},
+    {'name': 'statistical', 'params': {'votes_required': 2}},
+]
+
+# Faults to benchmark (subset for speed)
+fault_ids = [1, 2, 4, 5, 6, 7, 10, 11, 13]
+
+# Run benchmarks
+all_results = []
+for config in detector_configs:
+    print(f"Benchmarking {config['name']}...")
+    df = run_benchmark(config, fault_ids, n_runs=2)
+    all_results.append(df)
+
+results_df = pd.concat(all_results, ignore_index=True)
+
+# TODO: Aggregate results by detector
+# TODO: Create summary table with mean FDR, FAR, detection delay
+# TODO: Identify best detector for each fault type
+# TODO: Generate LaTeX table for publication
+
+summary = results_df.groupby('detector').agg({
+    'fdr': 'mean',
+    'far': 'mean',
+    'accuracy': 'mean',
+    'detection_delay': 'mean',
+}).round(3)
+
+print("\n" + "="*60)
+print("BENCHMARK SUMMARY")
+print("="*60)
+print(summary)
+#+end_src
+
+** Questions to Answer
+
+1. Which detector achieves highest overall accuracy?
+2. Is there a detector that dominates on all metrics?
+3. How should you select a detector for a specific application?
+
+* Challenge Exercise: Design Your Own Fault Detection System
+
+** Objective
+Apply everything learned to design a complete fault detection and diagnosis system.
+
+** Requirements
+
+1. *Detection*: Achieve >90% fault detection rate with <5% false alarm rate
+2. *Diagnosis*: Correctly classify at least 15 of 21 fault types
+3. *Speed*: Detection delay under 100 steps for step faults
+4. *Efficiency*: Process each step in under 50ms
+
+** Deliverables
+
+1. Working Python implementation
+2. Documentation of design choices
+3. Benchmark results on all 21 faults
+4. Analysis of failure cases
+
+** Hints
+
+- Consider ensemble methods combining multiple approaches
+- Focus monitoring on key process variables
+- Use domain knowledge about fault signatures
+- Implement hierarchical detection (fast screening + detailed diagnosis)
+
+* Solutions
+
+Solutions to these exercises are available in the =solutions/= directory.
+Note that advanced exercises often have multiple valid approaches---the
+provided solutions represent one possible implementation.

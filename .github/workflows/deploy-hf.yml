@@ -27,4 +27,4 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           # Use --delete to remove files that don't exist locally (like old tep/ directory)
-          python -m huggingface_hub.commands.huggingface_cli upload jkitchin/tennessee-eastman-process . --repo-type=space --delete --commit-message "Deploy from GitHub Actions"
+          hf upload jkitchin/tennessee-eastman-process . --repo-type=space --delete --commit-message "Deploy from GitHub Actions"
