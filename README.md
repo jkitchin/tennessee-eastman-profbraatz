@@ -439,14 +439,7 @@ File name | Description
 [`temain.f`](#temainf) | open loop simulation codes for the TEP
 [`temain_mod.f`](#temainmodf) | closed loop simulation codes for the TEP
 [`teprob.f`](#teprobf) | subprogram for the simulation codes for the TEP
-`d00.dat` | training file for the normal operating conditions
-`d00_te.dat` | testing file for the normal operating conditions
-`d01.dat` | training file for Fault 1
-`d01_te.dat`| testing file for Fault 1
-`d02.dat` | training file for Fault 2
-`d02_te.dat`| testing file for Fault 2
-`d21.dat`|training file for Fault 21
-`d21_te.dat`| testing file for Fault 21
+[`data/`](data/) | Reference data directory with training/testing files (see [data/README.md](data/README.md))
 
 Each training data file contains 480 rows and 52 columns and each testing data file contains 960 rows and 52 columns.
 An observation vector at a particular time instant is given by

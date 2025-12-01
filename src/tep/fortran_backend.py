@@ -51,7 +51,8 @@ class FortranTEProcess:
         If a random_seed was provided during construction, it is set after
         calling teinit to override the default seed (since teinit sets G=4651207995).
         """
-        self._teprob.teinit(0.0, self.yy, self.yp)
+        # teinit(nn, time, yy) returns (yy, yp)
+        self.yy, self.yp = self._teprob.teinit(self._nn, 0.0, self.yy)
 
         # Set random seed AFTER teinit if provided (teinit sets its own default seed)
         if self._random_seed is not None:
@@ -71,8 +72,8 @@ class FortranTEProcess:
         if not self._initialized:
             raise RuntimeError("Process not initialized. Call initialize() first.")
 
-        # Call tefunc to get derivatives
-        self._teprob.tefunc(self.time, self.yy, self.yp)
+        # Call tefunc to get derivatives: tefunc(nn, time, yy) returns (yy, yp)
+        self.yy, self.yp = self._teprob.tefunc(self._nn, self.time, self.yy)
 
         # Euler integration: yy = yy + yp * dt
         self.yy[:] = self.yy + self.yp * dt
@@ -162,28 +163,33 @@ class FortranTEProcess:
         # Update internal state
         self.yy[:] = yy
 
-        # Call TEFUNC to compute derivatives
-        self._teprob.tefunc(time, self.yy, self.yp)
+        # Call TEFUNC to compute derivatives: tefunc(nn, time, yy) returns (yy, yp)
+        _, yp = self._teprob.tefunc(self._nn, time, self.yy)
 
-        return self.yp.copy()
+        return yp.copy()
 
     def is_shutdown(self) -> bool:
         """Check if process is in shutdown state.
 
         The TEP process shuts down if certain measurements exceed limits.
-        This is a simplified check - the actual Fortran code sets flag6.
+        The Fortran code sets ISD=1 when any of these conditions are met:
+        - Reactor pressure (XMEAS(7)) > 3000 kPa
+        - Reactor level > 24 m³ or < 2 m³
+        - Reactor temperature (XMEAS(9)) > 175°C
+        - Separator level > 12 m³ or < 1 m³
+        - Stripper level > 8 m³ or < 1 m³
         """
-        # Check flag6 if available
-        if hasattr(self._teprob, 'flag6'):
-            return self._teprob.flag6.flag != 0
+        # Check the ISD shutdown flag from the SHUTDN common block
+        if hasattr(self._teprob, 'shutdn'):
+            return self._teprob.shutdn.isd != 0
 
-        # Fallback: check for extreme conditions
+        # Fallback: check for extreme conditions using correct limits
         xmeas = self._teprob.pv.xmeas
-        # Reactor pressure limits
-        if xmeas[6] < 2500 or xmeas[6] > 3200:
+        # Reactor pressure limit (XMEAS(7) > 3000 kPa)
+        if xmeas[6] > 3000.0:
             return True
-        # Reactor level limits
-        if xmeas[7] < 1 or xmeas[7] > 99:
+        # Reactor temperature limit (XMEAS(9) > 175°C)
+        if xmeas[8] > 175.0:
             return True
         return False
 

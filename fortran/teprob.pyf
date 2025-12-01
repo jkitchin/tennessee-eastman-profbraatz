@@ -37,4 +37,7 @@ python module teprob ! in
     common /flag6/ flag
     integer :: flag
 
+    common /shutdn/ isd
+    integer :: isd
+
 end python module teprob

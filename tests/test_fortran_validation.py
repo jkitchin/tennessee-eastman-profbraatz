@@ -23,7 +23,7 @@ from tep.constants import INITIAL_STATES
 
 
 # Path to reference data files
-DATA_DIR = Path(__file__).parent.parent
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 
 def load_fortran_data(filename):

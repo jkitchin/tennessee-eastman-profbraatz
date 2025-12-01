@@ -78,6 +78,7 @@ builddir/
 
 # Generated data files
 TE_data_*.dat
+tep_data.dat
 
 # Test executables
 temain_mod_test

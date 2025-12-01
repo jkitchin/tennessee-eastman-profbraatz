@@ -311,7 +311,9 @@ C
      .AV(8),
      .AD(8),BD(8),CD(8),
      .XMW(8)
-      INTEGER NN,I,ISD
+      INTEGER ISD
+      COMMON/SHUTDN/ISD
+      INTEGER NN,I,IRAND
       DOUBLE PRECISION RG,
      .VPR,
      .FIN(8),
@@ -384,8 +386,8 @@ C
       DDIST(I)=(2.D0*SWLK+0.1D0*SPWLK)/0.001D0
       TNEXT(I)=TLAST(I)+0.1D0
       ELSE
-      ISD=-1
-      HWLK=HSPAN(I)*TESUB7(ISD)+HZERO(I)
+      IRAND=-1
+      HWLK=HSPAN(I)*TESUB7(IRAND)+HZERO(I)
       ADIST(I)=0.D0
       BDIST(I)=0.D0
       CDIST(I)=DBLE(IDVWLK(I))/HWLK**2
@@ -834,6 +836,8 @@ C
       COMMON/DVEC/IDV(20)
       DOUBLE PRECISION G
       COMMON/RANDSD/G
+      INTEGER ISD
+      COMMON/SHUTDN/ISD
       DOUBLE PRECISION
      .UCLR,UCVR,UTLR,UTVR,
      .XLR,XVR,ETR,ESR,
@@ -1366,6 +1370,7 @@ C        d26_te: G=1997072199.D0
       DDIST(I)=0.D0
   550 CONTINUE
       TIME=0.0
+      ISD=0
       CALL TEFUNC(NN,TIME,YY,YP)
       RETURN
       END

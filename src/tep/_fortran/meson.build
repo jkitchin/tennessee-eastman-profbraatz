@@ -10,13 +10,13 @@ if have_fortran
   # Path to fortran sources relative to project root
   fortran_src = meson.project_source_root() / 'fortran'
 
-  # Generate f2py wrappers
+  # Generate f2py wrappers using signature file for common block exposure
+  # The pyf file defines the Python interface, Fortran sources are compiled separately
   teprob_wrapper = custom_target('teprob_wrapper',
-    input: [fortran_src / 'teprob.f', fortran_src / 'temain_mod.f'],
+    input: [fortran_src / 'teprob.pyf'],
     output: ['teprobmodule.c', 'teprob-f2pywrappers.f'],
     command: [py, '-m', 'numpy.f2py',
               '@INPUT@',
-              '-m', 'teprob',
               '--lower',
               '--build-dir', '@OUTDIR@']
   )
