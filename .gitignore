@@ -87,5 +87,10 @@ tep_fortran
 # Comparison images (generated during development)
 *_comparison*.png
 
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# UV lock file
+uv.lock
 
 research/*
