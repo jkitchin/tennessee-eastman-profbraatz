@@ -22,9 +22,42 @@ jobs:
       - name: Install Hugging Face CLI
         run: pip install huggingface_hub[cli]
 
+      - name: Delete old tep/ directory from HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python << 'EOF'
+          import os
+          from huggingface_hub import HfApi, list_repo_files
+
+          api = HfApi()
+          repo_id = "jkitchin/tennessee-eastman-process"
+
+          # List all files in the space
+          files = list_repo_files(repo_id, repo_type="space")
+
+          # Find files in the old tep/ directory (not src/tep/)
+          old_tep_files = [f for f in files if f.startswith("tep/")]
+
+          if old_tep_files:
+              print(f"Deleting {len(old_tep_files)} files from old tep/ directory:")
+              for f in old_tep_files:
+                  print(f"  - {f}")
+
+              # Delete the files
+              api.delete_files(
+                  repo_id=repo_id,
+                  repo_type="space",
+                  paths=old_tep_files,
+                  commit_message="Remove old tep/ directory (migrated to src/tep/)"
+              )
+              print("Old tep/ directory deleted successfully")
+          else:
+              print("No old tep/ directory found")
+          EOF
+
       - name: Upload to Hugging Face Spaces
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Use --delete to remove files that don't exist locally (like old tep/ directory)
-          hf upload jkitchin/tennessee-eastman-process . --repo-type=space --delete --commit-message "Deploy from GitHub Actions"
+          hf upload jkitchin/tennessee-eastman-process . --repo-type=space --commit-message "Deploy from GitHub Actions"
