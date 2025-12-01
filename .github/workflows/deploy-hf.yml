@@ -44,13 +44,14 @@ jobs:
               for f in old_tep_files:
                   print(f"  - {f}")
 
-              # Delete the files
-              api.delete_files(
-                  repo_id=repo_id,
-                  repo_type="space",
-                  paths=old_tep_files,
-                  commit_message="Remove old tep/ directory (migrated to src/tep/)"
-              )
+              # Delete the files one by one using delete_file
+              for f in old_tep_files:
+                  api.delete_file(
+                      path_in_repo=f,
+                      repo_id=repo_id,
+                      repo_type="space",
+                      commit_message=f"Remove old {f} (migrated to src/tep/)"
+                  )
               print("Old tep/ directory deleted successfully")
           else:
               print("No old tep/ directory found")
