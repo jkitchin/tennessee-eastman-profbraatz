@@ -236,6 +236,10 @@ class TEPSimulator:
         # Reset fault plugins
         self._fault_manager.reset()
 
+        # Clear any custom perturbations (Python backend only)
+        if hasattr(self.process, 'clear_perturbations'):
+            self.process.clear_perturbations()
+
         # Calculate initial measurements
         _ = self.process.evaluate(self.time, self.process.state.yy)
 
@@ -738,46 +742,68 @@ class TEPSimulator:
             self._apply_single_effect(effect)
 
     def _apply_single_effect(self, effect: FaultEffect):
-        """Apply a single fault effect to the process."""
+        """Apply a single fault effect to the process.
+
+        This method translates FaultEffect objects into backend perturbations.
+        Most effects only work with the Python backend since they require
+        modifying internal process variables.
+
+        Args:
+            effect: FaultEffect describing the perturbation to apply
+        """
         var = effect.variable
         mode = effect.mode
         value = effect.value
 
-        # Feed composition effects
-        if var == 'feed_comp_a':
-            # This will be handled via the process disturbance system
-            # For now, we modify the IDV array indirectly
-            pass  # Handled via custom perturbation
+        # Check if backend supports custom perturbations
+        has_perturbations = hasattr(self.process, 'set_perturbation')
 
-        elif var == 'feed_comp_b':
-            pass  # Handled via custom perturbation
+        # Feed composition effects (Python backend only)
+        if var == 'feed_comp_a' and mode == 'additive':
+            if has_perturbations:
+                current = self.process.get_perturbation('feed_comp_a')
+                self.process.set_perturbation('feed_comp_a', current + value)
 
-        # Temperature effects - these modify cooling water temperatures
-        elif var == 'feed_temp_d':
-            # D feed temperature perturbation
-            pass
+        elif var == 'feed_comp_b' and mode == 'additive':
+            if has_perturbations:
+                current = self.process.get_perturbation('feed_comp_b')
+                self.process.set_perturbation('feed_comp_b', current + value)
 
-        elif var == 'reactor_cw_inlet_temp':
-            # Reactor cooling water inlet temperature
-            pass
+        # Temperature effects (Python backend only)
+        elif var == 'feed_temp_d' and mode == 'additive':
+            if has_perturbations:
+                current = self.process.get_perturbation('feed_temp_d')
+                self.process.set_perturbation('feed_temp_d', current + value)
 
-        elif var == 'condenser_cw_inlet_temp':
-            # Condenser cooling water inlet temperature
-            pass
+        elif var == 'feed_temp_c' and mode == 'additive':
+            if has_perturbations:
+                current = self.process.get_perturbation('feed_temp_c')
+                self.process.set_perturbation('feed_temp_c', current + value)
 
-        # Flow effects
-        elif var == 'flow_a':
-            # A feed flow multiplier
-            pass
+        elif var == 'reactor_cw_inlet_temp' and mode == 'additive':
+            if has_perturbations:
+                current = self.process.get_perturbation('reactor_cw_inlet_temp')
+                self.process.set_perturbation('reactor_cw_inlet_temp', current + value)
 
-        elif var == 'flow_c':
-            # C feed flow multiplier
-            pass
+        elif var == 'condenser_cw_inlet_temp' and mode == 'additive':
+            if has_perturbations:
+                current = self.process.get_perturbation('condenser_cw_inlet_temp')
+                self.process.set_perturbation('condenser_cw_inlet_temp', current + value)
 
-        # Valve sticking effects
+        # Flow effects (Python backend only)
+        elif var == 'flow_a' and mode == 'multiplicative':
+            if has_perturbations:
+                current = self.process.get_perturbation('flow_a_mult')
+                self.process.set_perturbation('flow_a_mult', current * value)
+
+        elif var == 'flow_c' and mode == 'multiplicative':
+            if has_perturbations:
+                current = self.process.get_perturbation('flow_c_mult')
+                self.process.set_perturbation('flow_c_mult', current * value)
+
+        # Valve sticking effects (works with both backends)
         elif var == 'valve_reactor_cw':
             if mode == 'replace' and value is not None:
-                # Lock valve at specified position
                 self.process.set_xmv(10, value)
 
         elif var == 'valve_condenser_cw':

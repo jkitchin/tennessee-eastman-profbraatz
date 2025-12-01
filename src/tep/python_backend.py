@@ -310,6 +310,19 @@ class PythonTEProcess:
         # Create disturbances wrapper for API compatibility
         self.disturbances = PythonDisturbanceManager(self)
 
+        # Custom fault perturbations (for fault plugin system)
+        # These are applied in addition to IDV-based disturbances
+        self._custom_perturbations = {
+            'feed_comp_a': 0.0,           # Additive to feed A composition
+            'feed_comp_b': 0.0,           # Additive to feed B composition
+            'feed_temp_d': 0.0,           # Additive to D feed temperature (°C)
+            'feed_temp_c': 0.0,           # Additive to C feed temperature (°C)
+            'reactor_cw_inlet_temp': 0.0, # Additive to reactor CW temp (°C)
+            'condenser_cw_inlet_temp': 0.0,  # Additive to condenser CW temp (°C)
+            'flow_a_mult': 1.0,           # Multiplicative for A feed flow
+            'flow_c_mult': 1.0,           # Multiplicative for C feed flow
+        }
+
     # =========================================================================
     # Random Number Generator (TESUB7)
     # =========================================================================
@@ -798,13 +811,15 @@ class PythonTEProcess:
                 wlk.tnext[i] = 0.1
 
         # Apply disturbances to feed compositions
-        tp.xst[0, 3] = self._tesub8(1, time) - idv[0] * 0.03 - idv[1] * 2.43719e-3
-        tp.xst[1, 3] = self._tesub8(2, time) + idv[1] * 0.005
+        # Custom perturbations are added to IDV-based disturbances
+        pert = self._custom_perturbations
+        tp.xst[0, 3] = self._tesub8(1, time) - idv[0] * 0.03 - idv[1] * 2.43719e-3 + pert['feed_comp_a']
+        tp.xst[1, 3] = self._tesub8(2, time) + idv[1] * 0.005 + pert['feed_comp_b']
         tp.xst[2, 3] = 1.0 - tp.xst[0, 3] - tp.xst[1, 3]
-        tp.tst[0] = self._tesub8(3, time) + idv[2] * 5.0
-        tp.tst[3] = self._tesub8(4, time)
-        tp.tcwr = self._tesub8(5, time) + idv[3] * 5.0
-        tp.tcws = self._tesub8(6, time) + idv[4] * 5.0
+        tp.tst[0] = self._tesub8(3, time) + idv[2] * 5.0 + pert['feed_temp_d']
+        tp.tst[3] = self._tesub8(4, time) + pert['feed_temp_c']
+        tp.tcwr = self._tesub8(5, time) + idv[3] * 5.0 + pert['reactor_cw_inlet_temp']
+        tp.tcws = self._tesub8(6, time) + idv[4] * 5.0 + pert['condenser_cw_inlet_temp']
         r1f = self._tesub8(7, time)
         r2f = self._tesub8(8, time)
 
@@ -997,10 +1012,11 @@ class PythonTEProcess:
         tp.hst[12] = self._tesub1(tp.xst[:, 12], tp.tst[12], 0)
 
         # Calculate flows
+        # Custom flow multipliers are applied in addition to IDV effects
         tp.ftm[0] = vpos[0] * tp.vrng[0] / 100.0
         tp.ftm[1] = vpos[1] * tp.vrng[1] / 100.0
-        tp.ftm[2] = vpos[2] * (1.0 - idv[5]) * tp.vrng[2] / 100.0
-        tp.ftm[3] = vpos[3] * (1.0 - idv[6] * 0.2) * tp.vrng[3] / 100.0 + 1.0e-10
+        tp.ftm[2] = vpos[2] * (1.0 - idv[5]) * pert['flow_a_mult'] * tp.vrng[2] / 100.0
+        tp.ftm[3] = vpos[3] * (1.0 - idv[6] * 0.2) * pert['flow_c_mult'] * tp.vrng[3] / 100.0 + 1.0e-10
         tp.ftm[10] = vpos[6] * tp.vrng[6] / 100.0
         tp.ftm[12] = vpos[7] * tp.vrng[7] / 100.0
 
@@ -1356,6 +1372,86 @@ class PythonTEProcess:
     def clear_disturbances(self):
         """Clear all disturbances (set IDV to 0)."""
         self._idv[:] = 0
+
+    # =========================================================================
+    # Custom Fault Perturbations
+    # =========================================================================
+
+    def set_perturbation(self, name: str, value: float):
+        """Set a custom perturbation value for fault injection.
+
+        These perturbations are applied in addition to IDV-based disturbances
+        during the process dynamics calculation.
+
+        Parameters
+        ----------
+        name : str
+            Perturbation name. Valid names:
+            - 'feed_comp_a': Additive to A feed composition
+            - 'feed_comp_b': Additive to B feed composition
+            - 'feed_temp_d': Additive to D feed temperature (°C)
+            - 'feed_temp_c': Additive to C feed temperature (°C)
+            - 'reactor_cw_inlet_temp': Additive to reactor CW inlet temp (°C)
+            - 'condenser_cw_inlet_temp': Additive to condenser CW inlet temp (°C)
+            - 'flow_a_mult': Multiplicative factor for A feed flow (1.0 = normal)
+            - 'flow_c_mult': Multiplicative factor for C feed flow (1.0 = normal)
+        value : float
+            Perturbation value (additive or multiplicative depending on name)
+
+        Raises
+        ------
+        KeyError
+            If perturbation name is not recognized
+        """
+        if name not in self._custom_perturbations:
+            valid = ', '.join(self._custom_perturbations.keys())
+            raise KeyError(f"Unknown perturbation '{name}'. Valid: {valid}")
+        self._custom_perturbations[name] = value
+
+    def get_perturbation(self, name: str) -> float:
+        """Get a custom perturbation value.
+
+        Parameters
+        ----------
+        name : str
+            Perturbation name
+
+        Returns
+        -------
+        float
+            Current perturbation value
+        """
+        if name not in self._custom_perturbations:
+            valid = ', '.join(self._custom_perturbations.keys())
+            raise KeyError(f"Unknown perturbation '{name}'. Valid: {valid}")
+        return self._custom_perturbations[name]
+
+    def clear_perturbations(self):
+        """Reset all custom perturbations to their default values.
+
+        Additive perturbations are reset to 0.0.
+        Multiplicative perturbations are reset to 1.0.
+        """
+        self._custom_perturbations = {
+            'feed_comp_a': 0.0,
+            'feed_comp_b': 0.0,
+            'feed_temp_d': 0.0,
+            'feed_temp_c': 0.0,
+            'reactor_cw_inlet_temp': 0.0,
+            'condenser_cw_inlet_temp': 0.0,
+            'flow_a_mult': 1.0,
+            'flow_c_mult': 1.0,
+        }
+
+    def get_all_perturbations(self) -> dict:
+        """Get all custom perturbation values.
+
+        Returns
+        -------
+        dict
+            Copy of all perturbation values
+        """
+        return self._custom_perturbations.copy()
 
     def get_xmeas(self) -> np.ndarray:
         """Get current measurement values (for TEPSimulator compatibility)."""
