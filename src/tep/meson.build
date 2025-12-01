@@ -10,6 +10,8 @@ py.install_sources(
     'dashboard_dash.py',
     'detector_base.py',
     'detector_plugins.py',
+    'fault_base.py',
+    'fault_plugins.py',
     'fortran_backend.py',
     'python_backend.py',
     'simulator.py',

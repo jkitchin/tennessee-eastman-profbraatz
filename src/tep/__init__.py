@@ -65,6 +65,13 @@ from .detector_base import (
     DetectionMetrics,
     register_detector,
 )
+from .fault_base import (
+    BaseFaultPlugin,
+    FaultPluginRegistry,
+    FaultEffect,
+    FaultManager,
+    register_fault,
+)
 from .constants import (
     NUM_STATES, NUM_MEASUREMENTS, NUM_MANIPULATED_VARS, NUM_DISTURBANCES,
     COMPONENT_NAMES, MEASUREMENT_NAMES, MANIPULATED_VAR_NAMES, DISTURBANCE_NAMES
@@ -73,6 +80,7 @@ from .constants import (
 # Import plugins to register them
 from . import controller_plugins
 from . import detector_plugins
+from . import fault_plugins
 
 __version__ = "2.4.0"
 __author__ = "Fortran wrapper of Downs & Vogel (1993)"
@@ -146,6 +154,13 @@ __all__ = [
     "DetectionMetrics",
     "register_detector",
     "detector_plugins",
+    # Fault Plugin System
+    "BaseFaultPlugin",
+    "FaultPluginRegistry",
+    "FaultEffect",
+    "FaultManager",
+    "register_fault",
+    "fault_plugins",
     # Constants
     "NUM_STATES",
     "NUM_MEASUREMENTS",
