@@ -28,9 +28,9 @@ COPY . /app
 # Install the TEP package with Fortran backend
 RUN pip install --no-cache-dir . --config-settings=setup-args=-Dfortran=enabled
 
-# Remove source tep/ directory to avoid shadowing the installed package
+# Remove source src/tep/ directory to avoid shadowing the installed package
 # The installed package in site-packages has the compiled .so file
-RUN rm -rf /app/tep
+RUN rm -rf /app/src/tep
 
 # Verify Fortran extension after installation
 RUN python -c "from tep import is_fortran_available, get_available_backends; print(f'Fortran available: {is_fortran_available()}'); print(f'Backends: {get_available_backends()}')"

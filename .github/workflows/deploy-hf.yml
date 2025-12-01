@@ -4,7 +4,8 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'tep/**'
+      - 'src/tep/**'
+      - 'fortran/**'
       - 'Dockerfile'
       - 'app.py'
       - 'requirements*.txt'
