@@ -45,18 +45,22 @@ from .constants import SAFETY_LIMITS, NUM_MEASUREMENTS
 )
 class ThresholdDetector(BaseFaultDetector):
     """
-    Simple threshold detector based on process safety limits.
+    Simple threshold detector based on process safety limits or statistical bounds.
 
     Checks measurements against known safe operating ranges and flags
     violations. Very fast (no window needed) and useful as a first
     line of defense.
 
-    This detector can identify when the process is moving toward unsafe
-    conditions, which often indicates specific fault types.
+    Can operate in two modes:
+    1. Safety limits mode (default): Uses fixed process safety limits
+    2. Statistical mode: Uses mean ± n_sigma * std for each variable
 
     Attributes:
         limits: Dict mapping XMEAS index to (low, high) thresholds
         fault_mapping: Dict mapping violated sensor to likely fault class
+        mean: Optional array of means for statistical mode
+        std: Optional array of standard deviations for statistical mode
+        n_sigma: Number of standard deviations for threshold (default 3.0)
     """
 
     name = "threshold"
@@ -65,18 +69,41 @@ class ThresholdDetector(BaseFaultDetector):
     detect_interval = 1
     async_mode = False
 
-    def __init__(self, **kwargs):
+    def __init__(self, mean: np.ndarray = None, std: np.ndarray = None,
+                 n_sigma: float = 3.0, monitored_indices: List[int] = None, **kwargs):
+        """
+        Initialize threshold detector.
+
+        Args:
+            mean: Array of baseline means for each variable. If provided with std,
+                  uses statistical mode instead of safety limits.
+            std: Array of baseline standard deviations for each variable.
+            n_sigma: Number of standard deviations for threshold bounds (default 3.0).
+            monitored_indices: List of XMEAS indices to monitor (0-based).
+                              If None, monitors all variables in statistical mode
+                              or default safety-critical variables in limits mode.
+        """
         super().__init__(**kwargs)
 
-        # Default thresholds from process safety limits
-        # Index is 0-based XMEAS index
-        self.limits: Dict[int, Tuple[Optional[float], Optional[float]]] = {
-            6: (None, 2900.0),      # Reactor pressure max (kPa)
-            7: (3.0, 22.0),         # Reactor level (%)
-            8: (None, 170.0),       # Reactor temperature max (deg C)
-            11: (2.0, 11.0),        # Separator level (%)
-            14: (2.0, 7.0),         # Stripper level (%)
-        }
+        self.n_sigma = n_sigma
+        self._mean = mean
+        self._std = std
+        self._monitored_indices = monitored_indices
+        self._statistical_mode = mean is not None and std is not None
+
+        if self._statistical_mode:
+            # Statistical mode: use mean ± n_sigma * std
+            self._setup_statistical_limits()
+        else:
+            # Default thresholds from process safety limits
+            # Index is 0-based XMEAS index
+            self.limits: Dict[int, Tuple[Optional[float], Optional[float]]] = {
+                6: (None, 2900.0),      # Reactor pressure max (kPa)
+                7: (3.0, 22.0),         # Reactor level (%)
+                8: (None, 170.0),       # Reactor temperature max (deg C)
+                11: (2.0, 11.0),        # Separator level (%)
+                14: (2.0, 7.0),         # Stripper level (%)
+            }
 
         # Map sensor violations to likely fault classes
         self.fault_mapping: Dict[int, int] = {
@@ -86,6 +113,39 @@ class ThresholdDetector(BaseFaultDetector):
             11: 7,  # Separator level -> IDV(7) header pressure
             14: 6,  # Stripper level -> IDV(6) A feed loss
         }
+
+    def _setup_statistical_limits(self):
+        """Set up limits from mean and std arrays."""
+        self.limits = {}
+
+        if self._monitored_indices is not None:
+            indices = self._monitored_indices
+        else:
+            # Monitor all variables
+            indices = range(len(self._mean))
+
+        for idx in indices:
+            if idx < len(self._mean) and idx < len(self._std):
+                low = self._mean[idx] - self.n_sigma * self._std[idx]
+                high = self._mean[idx] + self.n_sigma * self._std[idx]
+                self.limits[idx] = (low, high)
+
+    def set_baseline(self, mean: np.ndarray, std: np.ndarray,
+                     monitored_indices: List[int] = None):
+        """
+        Set baseline statistics for statistical threshold detection.
+
+        Args:
+            mean: Array of baseline means for each variable.
+            std: Array of baseline standard deviations for each variable.
+            monitored_indices: List of XMEAS indices to monitor (0-based).
+                              If None, monitors all variables.
+        """
+        self._mean = mean
+        self._std = std
+        self._monitored_indices = monitored_indices
+        self._statistical_mode = True
+        self._setup_statistical_limits()
 
     def detect(self, xmeas: np.ndarray, step: int) -> DetectionResult:
         """Check measurements against thresholds."""
@@ -129,10 +189,15 @@ class ThresholdDetector(BaseFaultDetector):
         )
 
     def get_parameters(self) -> Dict[str, Any]:
-        return {
+        params = {
             "limits": self.limits,
             "fault_mapping": self.fault_mapping,
+            "n_sigma": self.n_sigma,
+            "statistical_mode": self._statistical_mode,
         }
+        if self._statistical_mode:
+            params["monitored_indices"] = self._monitored_indices
+        return params
 
 
 # =============================================================================
