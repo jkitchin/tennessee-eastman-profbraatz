@@ -161,6 +161,10 @@ __all__ = [
     "is_fortran_available",
     # Dashboard launchers
     "run_dashboard",
+    # Streaming
+    "StreamingServer",
+    "StreamingConfig",
+    "run_streaming_server",
 ]
 
 
@@ -171,3 +175,34 @@ def run_dashboard():
     """
     from .dashboard_dash import run_dashboard as _run_dashboard
     _run_dashboard()
+
+
+def run_streaming_server(port: int = 5555, **kwargs):
+    """Launch the ZeroMQ streaming server.
+
+    Streams simulation data to remote consumers. The simulation runs
+    continuously with random fault injection, restarting on safety violations.
+
+    Requires: pip install pyzmq
+
+    Args:
+        port: Port to bind to (default 5555)
+        **kwargs: Additional StreamingConfig parameters
+
+    Example:
+        >>> from tep import run_streaming_server
+        >>> run_streaming_server(port=5555)  # Blocks forever
+    """
+    from .streaming import run_server
+    run_server(port=port, **kwargs)
+
+
+# Lazy imports for streaming (requires pyzmq)
+def __getattr__(name):
+    if name == "StreamingServer":
+        from .streaming import StreamingServer
+        return StreamingServer
+    elif name == "StreamingConfig":
+        from .streaming import StreamingConfig
+        return StreamingConfig
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

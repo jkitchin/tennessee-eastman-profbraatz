@@ -13,6 +13,7 @@ py.install_sources(
     'fortran_backend.py',
     'python_backend.py',
     'simulator.py',
+    'streaming.py',
   ],
   subdir: 'tep'
 )
