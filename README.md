@@ -21,6 +21,10 @@ Based on the original Fortran code by J.J. Downs and E.F. Vogel (1993), with mod
 
 Python wrapper developed with Claude Code by John Kitchin.
 
+- [Online simulator (Huggingface)](https://huggingface.co/spaces/jkitchin/tennessee-eastman-process)
+- [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jkitchin/tennessee-eastman-profbraatz/blob/master/examples/introduction.ipynb)
+
+
 ## Features
 
 - **Complete TEP simulation** with all 50 state variables, 41 measurements, and 12 manipulated variables
