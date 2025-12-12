@@ -24,6 +24,7 @@ import webbrowser
 import threading
 import logging
 import sys
+import os
 
 # Configure logging for TEP dashboard
 logging.basicConfig(
@@ -443,6 +444,10 @@ def create_layout():
                         ], style={'backgroundColor': '#f8f9fa', 'padding': '20px', 'borderRadius': '8px',
                                  'maxWidth': '500px', 'margin': '0 auto'}),
                         html.Div([
+                            html.Img(src='/assets/tep.png',
+                                    style={'maxWidth': '100%', 'height': 'auto', 'margin': '30px auto 20px auto', 'display': 'block'})
+                        ]),
+                        html.Div([
                             html.H4("References:", style={'color': '#34495e', 'marginBottom': '15px', 'marginTop': '30px'}),
                             html.Ul([
                                 html.Li([
@@ -658,8 +663,12 @@ def create_empty_figure():
     return fig
 
 
-# Initialize the app
-app = Dash(__name__)
+# Initialize the app with assets folder
+# Get the directory where this file is located
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_assets_path = os.path.join(_current_dir, 'assets')
+
+app = Dash(__name__, assets_folder=_assets_path)
 app.title = "TEP Simulator Dashboard"
 
 # Expose the Flask server for production WSGI servers (gunicorn, etc.)

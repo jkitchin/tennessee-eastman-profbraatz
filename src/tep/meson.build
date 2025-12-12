@@ -17,5 +17,8 @@ py.install_sources(
   subdir: 'tep'
 )
 
+# Install assets directory
+install_subdir('assets', install_dir: py.get_install_dir() / 'tep')
+
 # Process _fortran subpackage
 subdir('_fortran')
